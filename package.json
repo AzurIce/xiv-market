@@ -1,0 +1,16 @@
+{
+  "name": "xiv-market-lite",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "app"
+  ],
+  "scripts": {
+    "dev": "bun run --cwd app dev",
+    "build": "bun run --cwd app build",
+    "preview": "bun run --cwd app preview",
+    "update-items": "bun run scripts/update-items.ts"
+  }
+}
