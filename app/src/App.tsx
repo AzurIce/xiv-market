@@ -22,7 +22,7 @@ function Layout(props: { children?: any }) {
 
 export default function App() {
   return (
-    <Router root={Layout}>
+    <Router base={import.meta.env.BASE_URL} root={Layout}>
       <Route path="/" component={HomePage} />
       <Route path="/item/:id" component={ItemDetailPage} />
       <Route path="/settings" component={SettingsPage} />
