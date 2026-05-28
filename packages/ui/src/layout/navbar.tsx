@@ -5,7 +5,14 @@ import { Select, SelectValue, SelectTrigger, SelectPortal, SelectContent, Select
 
 export function Navbar(props: {
   navItems?: { href: string; label: string; end?: boolean }[]
+  variant?: 'lite' | 'pro'
+  githubUrl?: string
 }) {
+  const variant = () => props.variant ?? 'lite'
+  const badgeColor = () =>
+    variant() === 'pro'
+      ? 'text-amber-500 font-semibold'
+      : 'text-muted-foreground font-medium'
   const [dataCentersRes] = createResource(fetchDataCenters)
   const [worldsRes] = createResource(fetchWorlds)
 
@@ -30,7 +37,10 @@ export function Navbar(props: {
           <div class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm font-bold">
             XIV
           </div>
-          <span class="hidden font-bold sm:inline-block">Market</span>
+          <div class="hidden sm:flex items-baseline space-x-1">
+            <span class="font-bold">Market</span>
+            <span class={`text-xs ${badgeColor()}`}>·{variant()}</span>
+          </div>
         </A>
 
         <nav class="flex items-center space-x-6 text-sm font-medium">
@@ -69,6 +79,22 @@ export function Navbar(props: {
               </SelectPortal>
             </Select>
           </div>
+
+          {props.githubUrl && (
+            <a
+              href={props.githubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              title="GitHub"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/>
+                <path d="M9 18c-4.51 2-5-2-7-2"/>
+              </svg>
+            </a>
+          )}
+
           <A
             href="/settings"
             class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
