@@ -16,11 +16,11 @@ function getVersionInfo() {
 }
 const version = getVersionInfo()
 
-export default defineConfig({
-  base: '/xiv-market-lite/',
+export default defineConfig(({ mode }) => ({
+  base: mode === 'production' ? '/xiv-market-lite/' : '/',
   plugins: [solid(), tailwindcss()],
   define: {
     __BUILD_COMMIT__: JSON.stringify(version.commit),
     __BUILD_DATE__: JSON.stringify(version.date),
   },
-})
+}))
