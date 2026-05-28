@@ -11,7 +11,7 @@
 - **样式**: Tailwind CSS v4（shadcn 主题变量）
 - **组件**: Kobalte Core（无障碍原语）+ cva（变体管理）
 - **包管理**: bun
-- **Monorepo**: 共享包在 `frontend/shared/` 和 `frontend/ui/`
+- **Monorepo**: 共享包在 `packages/shared/` 和 `packages/ui/`，应用入口在 `app/`
 
 ## 常用命令
 
@@ -58,6 +58,51 @@ scripts/                 # 构建脚本
 data/                    # 数据源
 └── Item.csv
 ```
+
+## Monorepo 说明
+
+本项目使用 bun workspaces 管理 monorepo：
+
+```json
+// package.json
+"workspaces": ["packages/*", "app"]
+```
+
+### 包依赖关系
+
+```
+app/
+├── @xiv-market/shared (workspace)
+└── @xiv-market/ui (workspace)
+    └── @xiv-market/shared (workspace)
+```
+
+- `packages/shared/` — **纯逻辑包**，不含框架依赖（除 Solid.js signal 外），可被任何项目复用
+  - Universalis API 客户端
+  - 物品数据加载与查询
+  - 区域/服务器状态管理
+  - 工具函数（cn、class-variance-authority）
+
+- `packages/ui/` — **UI 组件包**，依赖 `shared`，包含
+  - Kobalte 基础组件封装
+  - 页面组件（Home、ItemDetail、Settings）
+  - 布局组件（Navbar）
+
+- `app/` — **应用入口**，仅包含路由配置和构建配置，不存放业务逻辑
+
+### 复用方式
+
+其他项目可通过以下方式复用本仓库的包：
+
+1. **Git Submodule**（推荐）
+   ```bash
+   git submodule add https://github.com/AzurIce/xiv-market-lite.git external/xiv-market-lite
+   ```
+   然后在 `package.json` 中使用 `file:` 或 `workspace:*` 引用。
+
+2. **直接复制**（适用于不追踪更新的场景）
+
+> ⚠️ 本项目不发布到 npm registry，如需版本锁定请通过 submodule commit hash 控制。
 
 ## 物品数据
 
