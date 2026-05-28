@@ -1,4 +1,4 @@
-import { Router, Route } from '@solidjs/router'
+import { HashRouter, Route } from '@solidjs/router'
 import { lazy } from 'solid-js'
 import { loadItems } from '@xiv-market/shared'
 
@@ -24,10 +24,10 @@ function Layout(props: { children?: any }) {
 
 export default function App() {
   return (
-    <Router base={import.meta.env.BASE_URL} root={Layout}>
+    <HashRouter root={Layout}>
       <Route path="/" component={HomePage} />
       <Route path="/item/:id" component={ItemDetailPage} />
       <Route path="/settings" component={SettingsPage} />
-    </Router>
+    </HashRouter>
   )
 }

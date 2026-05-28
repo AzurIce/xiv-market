@@ -17,7 +17,7 @@ function getVersionInfo() {
 const version = getVersionInfo()
 
 export default defineConfig({
-  base: process.env.BASE_URL || '/',
+  base: (process.env.BASE_URL || '/').replace(/\/$/, '') || '/',
   plugins: [solid(), tailwindcss()],
   define: {
     __BUILD_COMMIT__: JSON.stringify(version.commit),
