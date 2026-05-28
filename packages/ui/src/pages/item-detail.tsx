@@ -2,7 +2,7 @@ import { createResource, createMemo, createSignal, createEffect, Show, Suspense,
 import { useParams, A } from '@solidjs/router'
 import Chart from 'chart.js/auto'
 import { ViolinController, Violin } from '@sgratzl/chartjs-chart-boxplot'
-import { fetchMarketData, fetchHistoryData, selectedRegion, getItemName, getItemIconUrl, getDcNameByWorldName } from '@xiv-market/shared'
+import { fetchMarketData, fetchHistoryData, selectedRegion, getItemName, getItemIconUrl, getDcNameByWorldName, baseUrl } from '@xiv-market/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
 import { Badge } from '../badge'
 import { Skeleton } from '../skeleton'
@@ -44,16 +44,16 @@ function PriceDiff(props: { nq?: number; hq?: number; label: string }) {
       <span class="text-xs text-muted-foreground">{props.label}</span>
       <div class="flex flex-col leading-snug">
         <Show when={hasNq()}>
-          <span class={(both() || onlyNq()) ? 'font-medium' : 'text-muted-foreground text-xs'}>
+          <span class={(both() || onlyNq()) ? 'font-medium text-sm sm:text-base' : 'text-muted-foreground text-xs'}>
             <Show when={both()}><span class="text-xs opacity-60 mr-1">NQ</span></Show>
-            {formatGil(props.nq!)}
+            <span class="break-all">{formatGil(props.nq!)}</span>
             <span class="text-xs opacity-60 ml-0.5">Gil</span>
           </span>
         </Show>
         <Show when={hasHq()}>
-          <span class={both() ? 'font-medium' : ''}>
+          <span class={both() ? 'font-medium text-sm sm:text-base' : ''}>
             <Show when={both()}><span class="text-xs opacity-60 mr-1">HQ</span></Show>
-            {formatGil(props.hq!)}
+            <span class="break-all">{formatGil(props.hq!)}</span>
             <span class="text-xs opacity-60 ml-0.5">Gil</span>
           </span>
         </Show>
@@ -226,7 +226,7 @@ function ServerListingViolin(props: { listings: any[] }) {
   })
 
   return (
-    <div class="h-[320px] w-full" role="img" aria-label="服务器挂单价格小提琴图">
+    <div class="h-[240px] sm:h-[320px] w-full" role="img" aria-label="服务器挂单价格小提琴图">
       <canvas ref={canvasRef} aria-hidden="true" />
     </div>
   )
@@ -302,7 +302,8 @@ function ServerListingBarChart(props: { listings: any[] }) {
       </div>
 
       {/* 统一 grid：表头和数据在同一个 grid 中，列宽全局一致 */}
-      <div class="grid grid-cols-[minmax(5rem,auto)_minmax(5rem,auto)_minmax(6rem,auto)_minmax(4rem,auto)_1fr] gap-x-3 gap-y-1 text-xs px-0.5">
+      <div class="overflow-x-auto -mx-4 px-4 sm:-mx-6 sm:px-6">
+        <div class="grid grid-cols-[minmax(4.5rem,auto)_minmax(4.5rem,auto)_minmax(5.5rem,auto)_minmax(3.5rem,auto)_1fr] gap-x-2 sm:gap-x-3 gap-y-1 text-xs px-0.5 min-w-[520px]">
         {/* 表头 */}
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">最低价</span>
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">中位价</span>
@@ -367,6 +368,7 @@ function ServerListingBarChart(props: { listings: any[] }) {
             )
           }}
         </For>
+      </div>
       </div>
     </div>
   )
@@ -506,7 +508,7 @@ function ServerHistoryTrendChart(props: { history: any[] }) {
   })
 
   return (
-    <div class="h-[320px] w-full" role="img" aria-label="服务器历史价格走势图">
+    <div class="h-[240px] sm:h-[320px] w-full" role="img" aria-label="服务器历史价格走势图">
       <canvas ref={canvasRef} aria-hidden="true" />
     </div>
   )
@@ -671,7 +673,7 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
   })
 
   return (
-    <div class="h-[300px] w-full" role="img" aria-label="服务器历史成交散点图">
+    <div class="h-[240px] sm:h-[300px] w-full" role="img" aria-label="服务器历史成交散点图">
       <canvas ref={canvasRef} aria-hidden="true" />
     </div>
   )
@@ -766,8 +768,8 @@ export default function ItemDetail() {
       {/* Sticky Header */}
       <div
         class={
-          'sticky top-14 z-40 -mx-2 px-2 flex items-center gap-3 transition-all duration-300 ' +
-          (isScrolled() ? 'h-14 py-2 bg-background/80 backdrop-blur-md shadow-sm rounded-xl' : 'h-20 py-4 mb-8')
+          'sticky top-14 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 flex items-center gap-2 sm:gap-3 transition-all duration-300 ' +
+          (isScrolled() ? 'h-14 py-2 bg-background/80 backdrop-blur-md shadow-sm' : 'h-20 py-3 mb-6 sm:py-4 sm:mb-8')
         }
       >
         {/* 返回按钮 */}
@@ -803,11 +805,12 @@ export default function ItemDetail() {
 
         {/* 物品信息 */}
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
+          {/* 第一行：名称 + 操作按钮（移动端）/ 名称 + 按钮 + ScopeSelect（桌面端） */}
+          <div class="flex items-center gap-1 sm:gap-2">
             <h1
               class={
                 'font-semibold tracking-tight truncate transition-all duration-300 ' +
-                (isScrolled() ? 'text-base' : 'text-2xl')
+                (isScrolled() ? 'text-base' : 'text-xl sm:text-2xl')
               }
             >
               {getItemName(Number(itemId()))}
@@ -843,7 +846,7 @@ export default function ItemDetail() {
                 title="在灰机wiki查看"
                 aria-label="在灰机wiki查看"
               >
-                <img src="/huiji.webp" alt="灰机wiki" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
+                <img src={`${baseUrl()}huiji.webp`} alt="灰机wiki" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
               </a>
 
               {/* Garland Tools */}
@@ -858,13 +861,13 @@ export default function ItemDetail() {
                 title="在 Garland Tools 查看"
                 aria-label="在 Garland Tools 查看"
               >
-                <img src="/garland.webp" alt="Garland Tools" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
+                <img src={`${baseUrl()}garland.webp`} alt="Garland Tools" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
               </a>
             </div>
 
-            <div class="flex-1 min-w-4" />
+            <div class="flex-1 min-w-2 sm:min-w-4" />
 
-            {/* 更新时间 */}
+            {/* 更新时间 - 桌面端 */}
             <div
               class={
                 'hidden sm:block flex-shrink-0 transition-all duration-300 ' +
@@ -878,13 +881,13 @@ export default function ItemDetail() {
               </Show>
             </div>
 
-            {/* 数据范围选择器 */}
-            <div class="flex-shrink-0">
+            {/* 数据范围选择器 - 桌面端 */}
+            <div class="hidden sm:block flex-shrink-0">
               <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
             </div>
           </div>
 
-          {/* 副行：ID + DC */}
+          {/* 第二行：ID（移动端）/ ID + ScopeSelect（桌面端） */}
           <div
             class={
               'flex items-center gap-2 transition-all duration-300 overflow-hidden ' +
@@ -892,7 +895,11 @@ export default function ItemDetail() {
             }
           >
             <span class="text-sm text-muted-foreground">#{itemId()}</span>
-            <Badge variant="outline">{scope()}</Badge>
+            <div class="flex-1" />
+            {/* 移动端 ScopeSelect */}
+            <div class="sm:hidden">
+              <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
+            </div>
           </div>
         </div>
       </div>
@@ -900,14 +907,14 @@ export default function ItemDetail() {
       <Show
         when={stats()}
         fallback={
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
             <For each={Array.from({ length: 4 })}>
               {() => <Card><CardHeader class="pb-2"><Skeleton class="h-4 w-20" /></CardHeader><CardContent><Skeleton class="h-8 w-24" /></CardContent></Card>}
             </For>
           </div>
         }
       >
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <StatCard
             title="最低挂单"
             icon={
@@ -945,12 +952,12 @@ export default function ItemDetail() {
       </Show>
 
       <Show when={currentListings().length > 0}>
-        <Card class="mb-6">
-          <CardHeader>
-            <CardTitle>挂单价格分布</CardTitle>
-            <CardDescription>各服务器挂单价格可视化</CardDescription>
+        <Card class="mb-6 py-3">
+          <CardHeader class="pb-2">
+            <CardTitle class="text-sm">挂单价格分布</CardTitle>
+            <CardDescription class="text-xs">各服务器挂单价格可视化</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent class="pt-0">
             <Tabs value={listingChartTab()} onChange={setListingChartTab}>
               <TabsList class="mb-4">
                 <TabsTrigger value="bar">条形图</TabsTrigger>
@@ -968,12 +975,12 @@ export default function ItemDetail() {
       </Show>
 
       <Show when={history().length > 0}>
-        <Card class="mb-6">
-          <CardHeader>
-            <CardTitle>交易走势</CardTitle>
-            <CardDescription>按服务器拆分的成交记录可视化</CardDescription>
+        <Card class="mb-6 py-3">
+          <CardHeader class="pb-2">
+            <CardTitle class="text-sm">交易走势</CardTitle>
+            <CardDescription class="text-xs">按服务器拆分的成交记录可视化</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent class="pt-0">
             <Tabs value={historyChartTab()} onChange={setHistoryChartTab}>
               <TabsList class="mb-4">
                 <TabsTrigger value="line">走势</TabsTrigger>
@@ -998,12 +1005,12 @@ export default function ItemDetail() {
           </TabsList>
 
           <TabsContent value="listings">
-            <Card>
-              <CardHeader>
-                <CardTitle>当前挂单</CardTitle>
-                <CardDescription>共 {currentListings().length} 个挂单</CardDescription>
+            <Card class="py-3">
+              <CardHeader class="pb-2">
+                <CardTitle class="text-sm">当前挂单</CardTitle>
+                <CardDescription class="text-xs">共 {currentListings().length} 个挂单</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent class="pt-0">
                 <Suspense fallback={<Skeleton class="h-[300px]" />}>
                   <Show
                     when={currentListings().length > 0}
@@ -1021,8 +1028,8 @@ export default function ItemDetail() {
                           <TableHead>单价</TableHead>
                           <TableHead>数量</TableHead>
                           <TableHead>总价</TableHead>
-                          <TableHead class="hidden sm:table-cell">服务器</TableHead>
-                          <TableHead class="hidden lg:table-cell">雇员</TableHead>
+                          <TableHead>服务器</TableHead>
+                          <TableHead>雇员</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1041,10 +1048,10 @@ export default function ItemDetail() {
                               <TableCell class="font-medium">
                                 {formatGil(listing.total)} Gil
                               </TableCell>
-                              <TableCell class="hidden sm:table-cell text-muted-foreground">
+                              <TableCell class="text-muted-foreground">
                                 {listing.worldName || scope()}
                               </TableCell>
-                              <TableCell class="hidden lg:table-cell text-muted-foreground">
+                              <TableCell class="text-muted-foreground">
                                 {listing.retainerName}
                               </TableCell>
                             </TableRow>
@@ -1059,12 +1066,12 @@ export default function ItemDetail() {
           </TabsContent>
 
           <TabsContent value="history">
-            <Card>
-              <CardHeader>
-                <CardTitle>成交历史</CardTitle>
-                <CardDescription>近期 {history().length} 笔成交记录</CardDescription>
+            <Card class="py-3">
+              <CardHeader class="pb-2">
+                <CardTitle class="text-sm">成交历史</CardTitle>
+                <CardDescription class="text-xs">近期 {history().length} 笔成交记录</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent class="pt-0">
                 <Suspense fallback={<Skeleton class="h-[400px]" />}>
                   <Show
                     when={history().length > 0}
@@ -1082,7 +1089,7 @@ export default function ItemDetail() {
                           <TableHead>单价</TableHead>
                           <TableHead>数量</TableHead>
                           <TableHead>总价</TableHead>
-                          <TableHead class="hidden sm:table-cell">时间</TableHead>
+                          <TableHead>时间</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1101,7 +1108,7 @@ export default function ItemDetail() {
                               <TableCell class="font-medium">
                                 {formatGil(sale.total)} Gil
                               </TableCell>
-                              <TableCell class="hidden sm:table-cell text-muted-foreground text-xs">
+                              <TableCell class="text-muted-foreground text-xs">
                                 {new Date(sale.timestamp * 1000).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                               </TableCell>
                             </TableRow>

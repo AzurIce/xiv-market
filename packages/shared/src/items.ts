@@ -12,13 +12,14 @@ export interface ItemsVersionInfo {
 declare const __BUILD_COMMIT__: string
 declare const __BUILD_DATE__: string
 
+import { baseUrl } from './utils'
+
 let itemsCache: Record<string, ItemInfo> | null = null
 let loadPromise: Promise<void> | null = null
 
 async function fetchItems() {
-  const base = import.meta.env.PROD ? import.meta.env.BASE_URL : '/'
-  const res = await fetch(`${base}items.json?v=${__BUILD_COMMIT__}`)
-  if (!res.ok) throw new Error(`${base}items.json ${res.status}`)
+  const res = await fetch(`${baseUrl()}items.json?v=${__BUILD_COMMIT__}`)
+  if (!res.ok) throw new Error(`${baseUrl()}items.json ${res.status}`)
   return res.json() as Promise<Record<string, ItemInfo>>
 }
 

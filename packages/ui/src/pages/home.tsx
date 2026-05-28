@@ -6,12 +6,11 @@ import {
   getItemName, getItemIconUrl,
   type AggregatedItemData,
 } from '@xiv-market/shared'
-import { Card, CardContent, CardHeader, CardTitle } from '../card'
+import { Card, CardContent } from '../card'
 import { Input } from '../input'
 import { Skeleton } from '../skeleton'
 import { Table, TableBody, TableRow, TableHead, TableCell, TableHeader } from '../table'
 import { Pagination } from '../pagination'
-import { Badge } from '../badge'
 import { PageHeader } from '../page-header'
 import { EmptyState } from '../empty-state'
 
@@ -91,35 +90,6 @@ function VelocityNqHq(props: { nq?: number; hq?: number }) {
   )
 }
 
-type SortKey = 'id' | 'name' | 'minPriceNq' | 'avgPriceNq' | 'velocityNq' | 'lastUpload'
-type SortDir = 'asc' | 'desc' | null
-
-function SortableHeader(props: {
-  label: string
-  sortKey: SortKey
-  currentKey: SortKey | null
-  currentDir: SortDir
-  onSort: (key: SortKey) => void
-  class?: string
-}) {
-  const isActive = () => props.sortKey === props.currentKey
-  return (
-    <TableHead class={props.class}>
-      <button
-        class="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer bg-transparent border-0 p-0 text-inherit"
-        onClick={() => props.onSort(props.sortKey)}
-      >
-        {props.label}
-        <span class="text-xs">
-          <Show when={isActive()} fallback={<span class="opacity-30">↕</span>}>
-            {props.currentDir === 'asc' ? '↑' : '↓'}
-          </Show>
-        </span>
-      </button>
-    </TableHead>
-  )
-}
-
 function MobileItemCard(props: {
   itemId: number
   agg?: AggregatedItemData
@@ -138,39 +108,67 @@ function MobileItemCard(props: {
   const minHqPrice = () => props.agg?.hq.minListingPrice
   const avgNqPrice = () => props.agg?.nq.averageSalePrice
   const avgHqPrice = () => props.agg?.hq.averageSalePrice
+  const minNqWorld = () => props.agg?.nq.minListingWorldId ? getWorldDisplayName(props.agg.nq.minListingWorldId) : null
+  const minHqWorld = () => props.agg?.hq.minListingWorldId ? getWorldDisplayName(props.agg.hq.minListingWorldId) : null
+  const nqVelocity = () => props.agg?.nq.dailySaleVelocity ?? 0
+  const hqVelocity = () => props.agg?.hq.dailySaleVelocity ?? 0
 
   return (
-    <Card class="cursor-pointer hover:shadow-md transition-shadow" onClick={props.onClick} role="button" tabindex="0" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onClick() } }}>
-      <CardContent class="p-4 space-y-3">
-        <div class="flex items-center gap-3">
+    <Card class="cursor-pointer hover:shadow-md transition-shadow py-2" onClick={props.onClick} role="button" tabindex="0" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onClick() } }}>
+      <CardContent class="px-2 py-0 space-y-1">
+        {/* 第一行：图标 + 名称 + ID */}
+        <div class="flex items-center gap-2.5">
           <Show when={iconUrls().length > 0}>
-            <img src={iconUrls()[0]} alt="" class="h-8 w-8 rounded" loading="lazy" onError={(e) => handleIconError(e, iconUrls(), 0)} />
+            <img src={iconUrls()[0]} alt="" class="h-7 w-7 rounded shrink-0" loading="lazy" onError={(e) => handleIconError(e, iconUrls(), 0)} />
           </Show>
           <div class="min-w-0 flex-1">
-            <div class="font-medium text-sm truncate">{getItemName(props.itemId)}</div>
-            <div class="text-xs text-muted-foreground">#{props.itemId}</div>
+            <div class="font-medium text-sm truncate leading-tight">{getItemName(props.itemId)}</div>
+            <div class="text-[10px] text-muted-foreground">#{props.itemId}</div>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-2 text-xs">
-          <div>
-            <span class="text-muted-foreground">最低挂单</span>
-            <div class="flex flex-col">
-              <Show when={minNqPrice() != null && minNqPrice()! > 0}>
-                <span class="flex items-center gap-1">
-                  <NqTag /><span class="font-medium">{formatGil(minNqPrice()!)}</span>
-                </span>
+
+        {/* 第二行：最低挂单（左）+ 均价（右） */}
+        <div class="flex items-start justify-between text-xs">
+          <div class="min-w-0">
+            <Show when={minNqPrice() != null && minNqPrice()! > 0}>
+              <div class="flex items-center gap-1">
+                <NqTag /><span class="font-medium">{formatGil(minNqPrice()!)}</span>
+              </div>
+              <Show when={minNqWorld()}>
+                <div class="text-[10px] text-muted-foreground truncate mt-0.5">{minNqWorld()}</div>
               </Show>
+            </Show>
               <Show when={minHqPrice() != null && minHqPrice()! > 0}>
-                <span class="flex items-center gap-1">
-                  <HqTag /><span class="font-medium">{formatGil(minHqPrice()!)}</span>
-                </span>
+              <div class="flex items-center gap-1">
+                <HqTag /><span class="font-medium">{formatGil(minHqPrice()!)}</span>
+              </div>
+              <Show when={minHqWorld()}>
+                <div class="text-[10px] text-muted-foreground truncate mt-0.5">{minHqWorld()}</div>
               </Show>
+            </Show>
+          </div>
+          <div class="text-right min-w-0 pl-2">
+            <div class="text-[10px] text-muted-foreground">均价</div>
+            <div class="whitespace-nowrap">
+              <PriceNqHq nq={avgNqPrice()} hq={avgHqPrice()} />
             </div>
           </div>
-          <div>
-            <span class="text-muted-foreground">均价</span>
-            <PriceNqHq nq={avgNqPrice()} hq={avgHqPrice()} />
+        </div>
+
+        {/* 第三行：日销量 + 时间 */}
+        <div class="flex justify-between items-center text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+          <div class="flex items-center gap-1.5">
+            <Show when={nqVelocity() > 0}>
+              <span>NQ {nqVelocity().toFixed(2)}/天</span>
+            </Show>
+            <Show when={hqVelocity() > 0}>
+              <span>HQ {hqVelocity().toFixed(2)}/天</span>
+            </Show>
+            <Show when={nqVelocity() === 0 && hqVelocity() === 0}>
+              <span>-</span>
+            </Show>
           </div>
+          <span>{formatTime(props.agg?.lastUploadTime ?? 0)}</span>
         </div>
       </CardContent>
     </Card>
@@ -181,26 +179,9 @@ export default function Home() {
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = createSignal('')
   const [page, setPage] = createSignal(1)
-  const [sortKey, setSortKey] = createSignal<SortKey | null>(null)
-  const [sortDir, setSortDir] = createSignal<SortDir>(null)
   const PAGE_SIZE = 50
 
   const [marketableItems] = createResource(fetchMarketableItems)
-
-  const handleSort = (key: SortKey) => {
-    if (sortKey() === key) {
-      if (sortDir() === 'asc') {
-        setSortDir('desc')
-      } else if (sortDir() === 'desc') {
-        setSortKey(null)
-        setSortDir(null)
-      }
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
-    setPage(1)
-  }
 
   const pagedItems = createMemo(() => {
     const all = marketableItems() ?? []
@@ -236,28 +217,6 @@ export default function Home() {
       }
     }
   )
-
-  const sortedItems = createMemo(() => {
-    const items = currentItems()
-    const key = sortKey()
-    const dir = sortDir()
-    const data = aggData()
-
-    if (!key || !dir) return items
-
-    return [...items].sort((a, b) => {
-      let cmp = 0
-      switch (key) {
-        case 'id': cmp = a - b; break
-        case 'name': cmp = getItemName(a).localeCompare(getItemName(b), 'zh-CN'); break
-        case 'minPriceNq': cmp = (data?.get(a)?.nq.minListingPrice ?? 0) - (data?.get(b)?.nq.minListingPrice ?? 0); break
-        case 'avgPriceNq': cmp = (data?.get(a)?.nq.averageSalePrice ?? 0) - (data?.get(b)?.nq.averageSalePrice ?? 0); break
-        case 'velocityNq': cmp = (data?.get(a)?.nq.dailySaleVelocity ?? 0) - (data?.get(b)?.nq.dailySaleVelocity ?? 0); break
-        case 'lastUpload': cmp = (data?.get(a)?.lastUploadTime ?? 0) - (data?.get(b)?.lastUploadTime ?? 0); break
-      }
-      return dir === 'desc' ? -cmp : cmp
-    })
-  })
 
   const getItemAgg = (itemId: number) => aggData()?.get(itemId)
 
@@ -298,18 +257,7 @@ export default function Home() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader class="pb-3 flex-row items-center justify-between">
-          <CardTitle class="text-base">
-            <Show when={marketableItems()} fallback="正在加载物品列表...">
-              第 {page()}/{totalPages()} 页
-            </Show>
-          </CardTitle>
-          <Show when={!marketableItems.loading && pagedItems().length === 0}>
-            <Badge variant="secondary">无结果</Badge>
-          </Show>
-        </CardHeader>
-        <CardContent class="px-0 pb-2">
+      <div class="pb-2">
           <Suspense fallback={
             <div class="px-6 space-y-4">
               <For each={Array.from({ length: 10 })}>
@@ -318,7 +266,7 @@ export default function Home() {
             </div>
           }>
             <Show
-              when={sortedItems().length > 0}
+              when={currentItems().length > 0}
               fallback={
                 <Show when={marketableItems()}>
                   <EmptyState
@@ -333,20 +281,20 @@ export default function Home() {
                 </Show>
               }
             >
-              {/* Desktop table */}
-              <div class="hidden lg:block">
+              {/* Desktop/Tablet table */}
+              <div class="hidden sm:block">
                 <Table>
                   <TableHeader>
                     <TableRow class="hover:bg-transparent">
-                      <SortableHeader label="物品" sortKey="name" currentKey={sortKey()} currentDir={sortDir()} onSort={handleSort} />
-                      <SortableHeader label="最低挂单" sortKey="minPriceNq" currentKey={sortKey()} currentDir={sortDir()} onSort={handleSort} />
-                      <SortableHeader label="均价" sortKey="avgPriceNq" currentKey={sortKey()} currentDir={sortDir()} onSort={handleSort} />
-                      <SortableHeader label="日销量" sortKey="velocityNq" currentKey={sortKey()} currentDir={sortDir()} onSort={handleSort} />
-                      <SortableHeader label="数据更新" sortKey="lastUpload" currentKey={sortKey()} currentDir={sortDir()} onSort={handleSort} class="hidden lg:table-cell w-[120px]" />
+                      <TableHead>物品</TableHead>
+                      <TableHead>最低挂单</TableHead>
+                      <TableHead>均价</TableHead>
+                      <TableHead>日销量</TableHead>
+                      <TableHead class="hidden lg:table-cell w-[120px]">数据更新</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <For each={sortedItems()}>
+                    <For each={currentItems()}>
                       {(itemId) => {
                         const agg = createMemo(() => getItemAgg(itemId))
                         const minListingInfo = createMemo(() => {
@@ -437,8 +385,8 @@ export default function Home() {
               </div>
 
               {/* Mobile cards */}
-              <div class="lg:hidden px-4 space-y-3">
-                <For each={sortedItems()}>
+              <div class="sm:hidden space-y-2">
+                <For each={currentItems()}>
                   {(itemId) => (
                     <MobileItemCard
                       itemId={itemId}
@@ -450,11 +398,13 @@ export default function Home() {
               </div>
             </Show>
           </Suspense>
-        </CardContent>
-      </Card>
+        </div>
 
       <Show when={totalPages() > 1}>
-        <div class="mt-4">
+        <div class="mt-4 flex flex-col items-center gap-2">
+          <span class="text-xs text-muted-foreground">
+            第 {page()} / {totalPages()} 页
+          </span>
           <Pagination page={page()} totalPages={totalPages()} onChange={setPage} />
         </div>
       </Show>

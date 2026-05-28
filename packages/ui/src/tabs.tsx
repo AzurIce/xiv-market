@@ -33,7 +33,7 @@ export const TabsList = <T extends ValidComponent = "div">(
     <TabsPrimitive.List
       data-slot="tabs-list"
       class={cx(
-        "bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-1",
+        "bg-muted text-muted-foreground inline-flex h-9 w-fit max-w-full items-center justify-start rounded-lg p-1 overflow-x-auto",
         props.class,
       )}
       {...rest}
