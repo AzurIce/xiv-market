@@ -16,8 +16,9 @@ let itemsCache: Record<string, ItemInfo> | null = null
 let loadPromise: Promise<void> | null = null
 
 async function fetchItems() {
-  const res = await fetch(`/items.json?v=${__BUILD_COMMIT__}`)
-  if (!res.ok) throw new Error(`/items.json ${res.status}`)
+  const base = import.meta.env.PROD ? import.meta.env.BASE_URL : '/'
+  const res = await fetch(`${base}items.json?v=${__BUILD_COMMIT__}`)
+  if (!res.ok) throw new Error(`${base}items.json ${res.status}`)
   return res.json() as Promise<Record<string, ItemInfo>>
 }
 
