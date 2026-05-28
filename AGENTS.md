@@ -115,6 +115,120 @@ app/
 - commit hash 在构建时注入 JS bundle（`vite.config.ts` → `define`）
 - 物品名/图标查询：`@xiv-market/shared` — `getItemName(id)` / `getItemIconUrl(id)` / `getIconUrl(iconId)`
 
+## 组件开发规范
+
+### 优先使用 Kobalte 原语
+
+需要交互的组件（按钮、下拉菜单、标签页、对话框等）必须使用 `@kobalte/core` 的原语包装，而非手写 DOM 事件。
+
+❌ **错误**：手写 `<button onClick>` + 手动管理 `aria-expanded`
+
+✅ **正确**：使用 Kobalte 原语
+```tsx
+import { DropdownMenu } from "@kobalte/core/dropdown-menu"
+
+function MyDropdown() {
+  return (
+    <DropdownMenu>
+      <DropdownMenu.Trigger>打开</DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content>...</DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
+  )
+}
+```
+
+### Variants 使用 cva
+
+所有有变体的组件必须使用 `class-variance-authority` 管理：
+
+```tsx
+import { cva } from "@xiv-market/shared"
+
+export const buttonVariants = cva(
+  "inline-flex items-center ...",
+  {
+    variants: {
+      variant: { default: "...", destructive: "..." },
+      size: { default: "...", sm: "...", lg: "..." },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
+```
+
+### Props 使用 splitProps 分离
+
+```tsx
+export function Card(props: CardProps) {
+  const [, rest] = splitProps(props, ["class"])
+  return <div class={cn("...", props.class)} {...rest} />
+}
+```
+
+### 使用 class 而非 className
+
+Solid.js JSX 使用 `class` 而非 `className`。组件只接受 `class` prop。
+
+## 代码组织
+
+### 页面文件结构
+
+```tsx
+// 1. 导入（按顺序：框架 → 库 → 共享包 → UI 组件）
+import { createSignal } from 'solid-js'
+import { useNavigate } from '@solidjs/router'
+import { fetchData } from '@xiv-market/shared'
+import { Card, Button } from '@xiv-market/ui'
+
+// 2. 工具函数
+function formatPrice(v: number): string { ... }
+
+// 3. 子组件（页面内使用的小型组件）
+function ItemRow(props: { item: Item }) { ... }
+
+// 4. 主页面组件
+export default function MyPage() {
+  // ...
+}
+```
+
+### 应用层（app/）
+
+应用层应该是**纯路由外壳**，只包含：
+- `App.tsx` — 路由配置 + Layout（引用共享 Navbar + pages）
+- `index.tsx` — 入口（loadItems → render）
+- `index.css` — 主题变量
+- 独有页面（如 enhanced-app 的 `EnhancedDashboard.tsx`）
+
+不要在应用层写业务逻辑或 UI 组件。
+
+## 图标规范
+
+项目不使用图标库（如 lucide-react）。内联 SVG 足够满足需求。
+
+- 使用 24×24 viewBox 的 SVG
+- stroke-width="2"，stroke-linecap="round"，stroke-linejoin="round"
+- 尺寸通过外层容器的 `size-4` / `size-3.5` 控制
+- 颜色通过 `currentColor` + text-color class 控制
+
+## 检查清单
+
+新增组件/页面时，确保：
+
+- [ ] 交互组件基于 Kobalte 原语（而非手写 DOM）
+- [ ] 有 variants 的组件使用 cva 管理
+- [ ] 使用 shadcn 语义化颜色变量（`bg-primary`、`text-muted-foreground` 等）
+- [ ] 移动端有响应式适配（或明确标注为 desktop-only）
+- [ ] 有加载状态（Skeleton）
+- [ ] 有空状态（EmptyState）
+- [ ] 有错误边界（ErrorBoundary）
+- [ ] `bun run build` 通过无 TypeScript 错误
+
 ## 外部资源
 
 - [Universalis API 文档](https://docs.universalis.app/)

@@ -16,7 +16,6 @@ XIV Market 的轻量版，使用 [Universalis](https://universalis.app) 公开 A
 - **样式**: Tailwind CSS v4
 - **组件库**: Kobalte Core（无障碍原语）
 - **构建**: Vite
-- **部署**: GitHub Pages
 
 ## 数据来源
 
@@ -38,15 +37,6 @@ XIV Market 的轻量版，使用 [Universalis](https://universalis.app) 公开 A
 物品中文名和图标 ID 来自 [thewakingsands/ffxiv-datamining-cn](https://github.com/thewakingsands/ffxiv-datamining-cn) 的 `Item.csv`。
 
 构建时通过 `bun run update-items` 自动下载并生成 `items.json`。
-
-## 与 Universalis 官方网页对比
-
-| 特性 | Universalis 官方 | XIV Market Lite |
-|------|-----------------|-----------------|
-| **后端架构** | 自有服务器 + 数据库 | 无后端，浏览器直接调用 Universalis API |
-| **部署方式** | 中心化服务 | 纯静态站点，可自托管到任意静态托管平台 |
-| **图表类型** | 价格走势折线图 + 堆叠柱状图 | 价格分布小提琴图 + 历史走势图 |
-| **技术栈** | 未公开 | Solid.js + Tailwind CSS + Vite（现代化前端栈） |
 
 ## 开发
 
