@@ -19,8 +19,11 @@
 # 启动开发服务器
 bun run dev
 
-# 构建生产版本（GitHub Pages 部署）
+# 构建生产版本（默认 base 为 /）
 bun run build
+
+# 构建生产版本（指定 base 路径，如 GitHub Pages 子目录）
+BASE_URL=/xiv-market-lite/ bun run build
 
 # 更新物品数据（CI/CD 使用）
 bun run update-items
@@ -49,7 +52,7 @@ packages/
 
 app/                     # xiv-market-lite 应用（GitHub Pages 部署）
 ├── src/App.tsx          # 路由外壳
-├── vite.config.ts       # Vite 配置（含 base 路径）
+├── vite.config.ts       # Vite 配置（base 通过环境变量控制）
 └── public/              # 静态资源（items.json）
 
 scripts/                 # 构建脚本
