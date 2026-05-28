@@ -15,7 +15,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check-items:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check items.json freshness
+        run: |
+          LOCAL_COMMIT=$(cat app/public/version.json | python3 -c "import sys,json; print(json.load(sys.stdin)['commit'])")
+          echo "Local items.json commit: $LOCAL_COMMIT"
+
+          REMOTE_COMMIT=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/thewakingsands/ffxiv-datamining-cn/commits?path=Item.csv&per_page=1" | \
+            python3 -c "import sys,json; print(json.load(sys.stdin)[0]['sha'][:12])")
+          echo "Remote Item.csv latest commit: $REMOTE_COMMIT"
+
+          if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+            echo ""
+            echo "ERROR: items.json is outdated!"
+            echo "  Local:  $LOCAL_COMMIT"
+            echo "  Remote: $REMOTE_COMMIT"
+            echo ""
+            echo "Please run the following command locally and commit the updated items.json:"
+            echo "  bun run update-items"
+            echo ""
+            exit 1
+          fi
+
+          echo "items.json is up to date."
+
   build:
+    needs: check-items
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,9 +60,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install
-
-      - name: Update items data
-        run: bun run update-items
 
       - name: Build
         run: bun run build

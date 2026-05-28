@@ -4,7 +4,7 @@ import { join } from 'path'
 const CSV_URL = 'https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/master/Item.csv'
 const COMMITS_API_URL = 'https://api.github.com/repos/thewakingsands/ffxiv-datamining-cn/commits?path=Item.csv&per_page=1'
 const ROOT = join(import.meta.dir, '..')
-const APPS = ['frontend/lite-app', 'frontend/enhanced-app']
+const APPS = ['app']
 
 function parseCsvLine(line: string): string[] {
   const fields: string[] = []
