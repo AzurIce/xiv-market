@@ -11,7 +11,5 @@ export function cn(...inputs: ClassValue[]) {
  * 会被设置为 `/xiv-market-lite/`，但开发环境仍为 `/`。
  */
 export function baseUrl(): string {
-  const base = import.meta.env.PROD ? import.meta.env.BASE_URL : '/'
-  // 去掉末尾斜杠，避免拼接出双斜杠（如 /xiv-market-lite//huiji.webp）
-  return base.replace(/\/$/, '') || '/'
+  return import.meta.env.PROD ? import.meta.env.BASE_URL : '/'
 }
