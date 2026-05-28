@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@source "../../ui/src";
+@source "../../packages/ui/src";
 
 @theme inline {
   --color-background: oklch(1 0 0);
@@ -40,11 +40,7 @@
 }
 
 @layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
+  * {
     border-color: var(--color-border);
   }
 
