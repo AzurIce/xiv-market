@@ -9,10 +9,14 @@ export function Navbar(props: {
   githubUrl?: string
 }) {
   const variant = () => props.variant ?? 'lite'
-  const badgeColor = () =>
-    variant() === 'pro'
-      ? 'text-amber-500 font-semibold'
-      : 'text-muted-foreground font-medium'
+
+  const isPro = () => variant() === 'pro'
+
+  const badgeClass = () =>
+    isPro()
+      ? 'bg-amber-500/15 text-amber-600 border-amber-500/25'
+      : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+
   const [dataCentersRes] = createResource(fetchDataCenters)
   const [worldsRes] = createResource(fetchWorlds)
 
@@ -33,13 +37,15 @@ export function Navbar(props: {
   return (
     <header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div class="flex h-14 max-w-7xl mx-auto items-center px-4 sm:px-6 lg:px-8">
-        <A href="/" class="mr-6 flex items-center space-x-2">
-          <div class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm font-bold">
+        <A href="/" class="mr-6 flex items-center gap-3">
+          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold tracking-tight">
             XIV
           </div>
-          <div class="hidden sm:flex items-baseline space-x-1">
-            <span class="font-bold">Market</span>
-            <span class={`text-xs ${badgeColor()}`}>·{variant()}</span>
+          <div class="hidden sm:flex items-center gap-2">
+            <span class="text-base font-bold tracking-tight text-foreground">Market</span>
+            <span class={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${badgeClass()}`}>
+              {variant()}
+            </span>
           </div>
         </A>
 
@@ -58,7 +64,7 @@ export function Navbar(props: {
           </For>
         </nav>
 
-        <div class="flex flex-1 items-center justify-end space-x-4">
+        <div class="flex flex-1 items-center justify-end space-x-3">
           <div class="flex items-center space-x-2">
             <label for="region-select" class="text-sm text-muted-foreground hidden sm:inline">
               区域
@@ -85,7 +91,7 @@ export function Navbar(props: {
               href={props.githubUrl}
               target="_blank"
               rel="noopener noreferrer"
-              class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-input bg-background text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               title="GitHub"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
@@ -97,13 +103,13 @@ export function Navbar(props: {
 
           <A
             href="/settings"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-input bg-background text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             activeClass="bg-accent text-accent-foreground"
             end
             title="设置"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
-              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l-.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </A>
