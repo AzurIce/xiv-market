@@ -1,6 +1,6 @@
 import type { DataCenter, World, MarketData, HistoryData, AggregatedItemData } from './types'
 
-const BASE_URL = 'https://universalis.app'
+const BASE_URL = import.meta.env?.DEV ? '/api/universalis' : 'https://universalis.app'
 
 export async function fetchDataCenters(): Promise<DataCenter[]> {
   const res = await fetch(`${BASE_URL}/api/v2/data-centers`)

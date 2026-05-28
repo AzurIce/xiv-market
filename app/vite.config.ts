@@ -23,4 +23,13 @@ export default defineConfig({
     __BUILD_COMMIT__: JSON.stringify(version.commit),
     __BUILD_DATE__: JSON.stringify(version.date),
   },
+  server: {
+    proxy: {
+      '/api/universalis': {
+        target: 'https://universalis.app',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/universalis/, ''),
+      },
+    },
+  },
 })

@@ -57,17 +57,26 @@ export function getItemName(itemId: number): string {
   return itemsCache[String(itemId)]?.name ?? `物品 #${itemId}`
 }
 
-export function getIconUrl(iconId: number): string {
-  if (!iconId) return ''
+export function getIconUrl(iconId: number): string[] {
+  if (!iconId) return []
   const folder = Math.floor(iconId / 1000) * 1000
   const paddedFolder = String(folder).padStart(6, '0')
   const paddedFile = String(iconId).padStart(6, '0')
-  return `https://xivapi.com/i/${paddedFolder}/${paddedFile}.png`
+  return [
+    `https://xivapi.com/i/${paddedFolder}/${paddedFile}.png`,
+    `https://www.garlandtools.org/files/icons/item/t/${iconId}.png`,
+    `https://garlandtools.org/files/icons/item/t/${iconId}.png`,
+  ]
 }
 
-export function getItemIconUrl(itemId: number): string {
+export function getIconUrlString(iconId: number): string {
+  const urls = getIconUrl(iconId)
+  return urls[0] ?? ''
+}
+
+export function getItemIconUrl(itemId: number): string[] {
   const info = getItemInfo(itemId)
-  if (!info || !info.icon) return ''
+  if (!info || !info.icon) return []
   return getIconUrl(info.icon)
 }
 

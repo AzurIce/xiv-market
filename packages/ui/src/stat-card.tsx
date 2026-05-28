@@ -20,7 +20,7 @@ export function StatCard(props: {
             {props.title}
           </CardTitle>
           {props.icon && (
-            <span class="text-muted-foreground/50">{props.icon}</span>
+            <span class="text-muted-foreground">{props.icon}</span>
           )}
         </div>
       </CardHeader>

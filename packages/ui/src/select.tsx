@@ -55,7 +55,7 @@ export const SelectTrigger = <T extends ValidComponent = "button">(
       data-slot="select-trigger"
       data-size={props.size}
       class={cx(
-        "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none",
+        "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground flex w-fit items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none",
         "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-[size=default]:h-9 data-[size=sm]:h-8",
@@ -100,7 +100,7 @@ export const SelectContent = <T extends ValidComponent = "div">(
     <SelectPrimitive.Content
       data-slot="select-content"
       class={cx(
-        "bg-popover text-popover-foreground relative z-50 min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
+        "bg-background text-foreground relative z-50 min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
         props.class,
       )}
       {...rest}

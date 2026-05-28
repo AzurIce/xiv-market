@@ -174,10 +174,10 @@ function ServerListingViolin(props: { listings: any[] }) {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'oklch(1 0 0)',
-            titleColor: 'oklch(0.145 0 0)',
-            bodyColor: 'oklch(0.145 0 0)',
-            borderColor: 'oklch(0.922 0 0)',
+            backgroundColor: '#ffffff',
+            titleColor: '#0a0a0a',
+            bodyColor: '#0a0a0a',
+            borderColor: '#e5e5e5',
             borderWidth: 1,
             padding: 10,
             callbacks: {
@@ -226,8 +226,8 @@ function ServerListingViolin(props: { listings: any[] }) {
   })
 
   return (
-    <div class="h-[320px] w-full">
-      <canvas ref={canvasRef} />
+    <div class="h-[320px] w-full" role="img" aria-label="服务器挂单价格小提琴图">
+      <canvas ref={canvasRef} aria-hidden="true" />
     </div>
   )
 }
@@ -301,14 +301,16 @@ function ServerListingBarChart(props: { listings: any[] }) {
         </label>
       </div>
 
-      <div class="flex items-center gap-3 text-[11px] text-muted-foreground mb-1 px-0.5">
-        <span class="w-16 text-right tabular-nums">最低价</span>
-        <span class="w-16 text-right tabular-nums">中位价</span>
-        <span class="w-24 text-right tabular-nums">P25~P75</span>
-        <span class="w-16 text-right">服务器</span>
-        <div class="flex-1"></div>
-      </div>
-      <div class="space-y-1">
+      {/* 统一 grid：表头和数据在同一个 grid 中，列宽全局一致 */}
+      <div class="grid grid-cols-[minmax(5rem,auto)_minmax(5rem,auto)_minmax(6rem,auto)_minmax(4rem,auto)_1fr] gap-x-3 gap-y-1 text-xs px-0.5">
+        {/* 表头 */}
+        <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">最低价</span>
+        <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">中位价</span>
+        <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">P25~P75</span>
+        <span class="text-right whitespace-nowrap text-muted-foreground">服务器</span>
+        <div></div>
+
+        {/* 数据行：display: contents 让子元素直接参与父级 grid */}
         <For each={serverData().data}>
           {(item) => {
             const max = serverData().globalMax
@@ -320,22 +322,20 @@ function ServerListingBarChart(props: { listings: any[] }) {
             const color = dcColorMap().get(item.dc)
 
             return (
-              <div
-                class="flex items-center gap-3 text-xs group cursor-pointer hover:bg-accent/5 rounded px-0.5 py-0.5 -mx-0.5 transition-colors"
-              >
-                <span class="w-16 text-right tabular-nums text-[11px] text-muted-foreground">
+              <div class="contents group cursor-pointer">
+                <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5">
                   {formatGil(item.min)}
                 </span>
-                <span class="w-16 text-right tabular-nums text-[11px]" style={{ color: '#fbbf24' }}>
+                <span class="text-right tabular-nums whitespace-nowrap text-amber-500 group-hover:bg-accent/5 rounded px-0.5 py-0.5">
                   {formatGil(item.median)}
                 </span>
-                <span class="w-24 text-right tabular-nums text-[11px] text-muted-foreground">
+                <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5">
                   {formatGil(item.p25)}~{formatGil(item.p75)}
                 </span>
-                <span class="w-16 text-muted-foreground truncate text-right text-[11px]" title={item.server}>
+                <span class="text-muted-foreground truncate text-right whitespace-nowrap group-hover:bg-accent/5 rounded px-0.5 py-0.5" title={item.server}>
                   {item.server}
                 </span>
-                <div class="flex-1 h-4 bg-muted/30 rounded-sm relative overflow-hidden">
+                <div class="h-4 bg-muted/30 rounded-sm relative overflow-hidden min-w-0">
                   {/* P25~P75 区间 */}
                   <div
                     class="absolute h-full rounded-sm"
@@ -460,10 +460,10 @@ function ServerHistoryTrendChart(props: { history: any[] }) {
         plugins: {
           legend: { display: true, position: 'top' },
           tooltip: {
-            backgroundColor: 'oklch(1 0 0)',
-            titleColor: 'oklch(0.145 0 0)',
-            bodyColor: 'oklch(0.145 0 0)',
-            borderColor: 'oklch(0.922 0 0)',
+            backgroundColor: '#ffffff',
+            titleColor: '#0a0a0a',
+            bodyColor: '#0a0a0a',
+            borderColor: '#e5e5e5',
             borderWidth: 1,
             padding: 10,
             callbacks: {
@@ -506,8 +506,8 @@ function ServerHistoryTrendChart(props: { history: any[] }) {
   })
 
   return (
-    <div class="h-[320px] w-full">
-      <canvas ref={canvasRef} />
+    <div class="h-[320px] w-full" role="img" aria-label="服务器历史价格走势图">
+      <canvas ref={canvasRef} aria-hidden="true" />
     </div>
   )
 }
@@ -613,10 +613,10 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
         plugins: {
           legend: { display: true, position: 'top' },
           tooltip: {
-            backgroundColor: 'oklch(1 0 0)',
-            titleColor: 'oklch(0.145 0 0)',
-            bodyColor: 'oklch(0.145 0 0)',
-            borderColor: 'oklch(0.922 0 0)',
+            backgroundColor: '#ffffff',
+            titleColor: '#0a0a0a',
+            bodyColor: '#0a0a0a',
+            borderColor: '#e5e5e5',
             borderWidth: 1,
             padding: 10,
             callbacks: {
@@ -671,8 +671,8 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
   })
 
   return (
-    <div class="h-[300px] w-full">
-      <canvas ref={canvasRef} />
+    <div class="h-[300px] w-full" role="img" aria-label="服务器历史成交散点图">
+      <canvas ref={canvasRef} aria-hidden="true" />
     </div>
   )
 }
@@ -691,15 +691,17 @@ export default function ItemDetail() {
     setScope(region)
   }))
 
+  let sentinelRef!: HTMLDivElement
+
   onMount(() => {
-    // 使用迟滞阈值避免临界点振荡（抽搐）
-    const handleScroll = () => {
-      const y = window.scrollY
-      if (y > 80) setIsScrolled(true)
-      else if (y < 40) setIsScrolled(false)
-    }
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    onCleanup(() => window.removeEventListener('scroll', handleScroll))
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsScrolled(!entry.isIntersecting)
+      },
+      { threshold: 0, rootMargin: '-56px 0px 0px 0px' }
+    )
+    if (sentinelRef) observer.observe(sentinelRef)
+    onCleanup(() => observer.disconnect())
   })
 
   const [marketDataMap] = createResource(
@@ -758,99 +760,139 @@ export default function ItemDetail() {
 
   return (
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Sentinel: Intersection Observer 监听此元素是否离开视口 */}
+      <div ref={sentinelRef} class="h-px -mt-px" />
+
       {/* Sticky Header */}
       <div
         class={
-          'sticky top-14 z-40 rounded-xl -mx-2 px-2 transition-[background-color,border-color,box-shadow,padding] duration-300 ' +
-          (isScrolled()
-            ? 'bg-background/80 backdrop-blur-md border-b border-border/50 shadow-sm py-2'
-            : 'bg-transparent py-4 mb-8')
+          'sticky top-14 z-40 -mx-2 px-2 flex items-center gap-3 transition-all duration-300 ' +
+          (isScrolled() ? 'h-14 py-2 bg-background/80 backdrop-blur-md shadow-sm rounded-xl' : 'h-20 py-4 mb-8')
         }
       >
-        {/* 统一的单行布局 */}
-        <div class="flex items-center gap-3">
-          {/* 返回按钮 */}
-          <A
-            href="/"
-            class="flex-shrink-0 rounded-md hover:bg-accent/50 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all duration-300 h-8 w-8"
-            title="返回市场"
-          >
-            <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-          </A>
+        {/* 返回按钮 */}
+        <A
+          href="/"
+          class="flex-shrink-0 rounded-md hover:bg-accent/50 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors duration-300 h-8 w-8"
+          title="返回市场"
+        >
+          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </A>
 
-          {/* 物品图标 */}
-          <Show when={getItemIconUrl(Number(itemId()))}>
-            <img
-              src={getItemIconUrl(Number(itemId()))!}
-              alt=""
-              class={
-                'rounded flex-shrink-0 transition-all duration-300 ' +
-                (isScrolled() ? 'h-6 w-6' : 'h-10 w-10')
+        {/* 物品图标 */}
+        <Show when={getItemIconUrl(Number(itemId())).length > 0}>
+          <img
+            src={getItemIconUrl(Number(itemId()))[0]}
+            alt=""
+            class={
+              'rounded flex-shrink-0 transition-all duration-300 ' +
+              (isScrolled() ? 'h-6 w-6' : 'h-10 w-10')
+            }
+            onError={(e) => {
+              const urls = getItemIconUrl(Number(itemId()))
+              if (urls.length > 1) {
+                e.currentTarget.src = urls[1]
+              } else {
+                e.currentTarget.style.display = 'none'
               }
-              onError={(e) => { e.currentTarget.style.display = 'none' }}
-            />
-          </Show>
+            }}
+          />
+        </Show>
 
-          {/* 物品信息 */}
-          <div class="min-w-0 flex-1">
-            {/* 主行：名称 + 复制 + 右侧信息 */}
-            <div class="flex items-center gap-2">
-              <h1
-                class={
-                  'font-bold tracking-tight truncate transition-all duration-300 ' +
-                  (isScrolled() ? 'text-lg' : 'text-3xl')
-                }
-              >
-                {getItemName(Number(itemId()))}
-              </h1>
+        {/* 物品信息 */}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h1
+              class={
+                'font-semibold tracking-tight truncate transition-all duration-300 ' +
+                (isScrolled() ? 'text-base' : 'text-2xl')
+              }
+            >
+              {getItemName(Number(itemId()))}
+            </h1>
 
+            {/* 操作按钮组 */}
+            <div class="flex items-center gap-0.5 flex-shrink-0">
               {/* 复制按钮 */}
               <button
                 onClick={handleCopyName}
-                class="rounded-md hover:bg-accent/50 transition-colors flex-shrink-0 h-5 w-5 p-0.5"
+                class={
+                  'rounded-md hover:bg-accent/80 hover:text-accent-foreground transition-all duration-200 flex items-center justify-center text-muted-foreground ' +
+                  (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
+                }
+                aria-label={copied() ? '已复制' : '复制名称'}
                 title={copied() ? '已复制' : '复制名称'}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-full h-full text-muted-foreground">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'}>
                   <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
                   <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
                 </svg>
               </button>
 
-              {/* flex-1  spacer */}
-              <div class="flex-1" />
-
-              {/* 更新时间 - 收缩时隐藏 */}
-              <div
+              {/* 灰机wiki */}
+              <a
+                href={`https://ff14.huijiwiki.com/wiki/${encodeURIComponent('物品:' + getItemName(Number(itemId())))}`}
+                target="_blank"
+                rel="noopener noreferrer"
                 class={
-                  'hidden sm:block overflow-hidden transition-all duration-300 whitespace-nowrap ' +
-                  (isScrolled() ? 'w-0 opacity-0' : 'w-auto opacity-100')
+                  'rounded-md hover:bg-accent/80 hover:opacity-100 opacity-70 transition-all duration-200 flex items-center justify-center overflow-hidden ' +
+                  (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
                 }
+                title="在灰机wiki查看"
+                aria-label="在灰机wiki查看"
               >
-                <Show when={stats()?.lastUploadTime}>
-                  <p class="text-sm text-muted-foreground">
-                    更新于 {formatTime(stats()?.lastUploadTime ?? 0)}
-                  </p>
-                </Show>
-              </div>
+                <img src="/huiji.webp" alt="灰机wiki" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
+              </a>
 
-              {/* 数据范围选择器 */}
-              <div class="flex-shrink-0">
-                <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
-              </div>
+              {/* Garland Tools */}
+              <a
+                href={`https://garlandtools.cn/db/#item/${itemId()}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                class={
+                  'rounded-md hover:bg-accent/80 hover:opacity-100 opacity-70 transition-all duration-200 flex items-center justify-center overflow-hidden ' +
+                  (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
+                }
+                title="在 Garland Tools 查看"
+                aria-label="在 Garland Tools 查看"
+              >
+                <img src="/garland.webp" alt="Garland Tools" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
+              </a>
             </div>
 
-            {/* 副行：ID + DC - 收缩时隐藏 */}
+            <div class="flex-1 min-w-4" />
+
+            {/* 更新时间 */}
             <div
               class={
-                'flex items-center gap-2 overflow-hidden transition-all duration-300 ' +
-                (isScrolled() ? 'h-0 opacity-0 mt-0' : 'h-5 opacity-100 mt-1')
+                'hidden sm:block flex-shrink-0 transition-all duration-300 ' +
+                (isScrolled() ? 'opacity-0 w-0' : 'opacity-100')
               }
             >
-              <span class="text-sm text-muted-foreground">#{itemId()}</span>
-              <Badge variant="outline">{scope()}</Badge>
+              <Show when={stats()?.lastUploadTime}>
+                <p class="text-sm text-muted-foreground whitespace-nowrap">
+                  更新于 {formatTime(stats()?.lastUploadTime ?? 0)}
+                </p>
+              </Show>
             </div>
+
+            {/* 数据范围选择器 */}
+            <div class="flex-shrink-0">
+              <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
+            </div>
+          </div>
+
+          {/* 副行：ID + DC */}
+          <div
+            class={
+              'flex items-center gap-2 transition-all duration-300 overflow-hidden ' +
+              (isScrolled() ? 'h-0 opacity-0 mt-0' : 'h-5 opacity-100 mt-1')
+            }
+          >
+            <span class="text-sm text-muted-foreground">#{itemId()}</span>
+            <Badge variant="outline">{scope()}</Badge>
           </div>
         </div>
       </div>
@@ -858,14 +900,14 @@ export default function ItemDetail() {
       <Show
         when={stats()}
         fallback={
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <For each={Array.from({ length: 4 })}>
               {() => <Card><CardHeader class="pb-2"><Skeleton class="h-4 w-20" /></CardHeader><CardContent><Skeleton class="h-8 w-24" /></CardContent></Card>}
             </For>
           </div>
         }
       >
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <StatCard
             title="最低挂单"
             icon={
@@ -980,7 +1022,7 @@ export default function ItemDetail() {
                           <TableHead>数量</TableHead>
                           <TableHead>总价</TableHead>
                           <TableHead class="hidden sm:table-cell">服务器</TableHead>
-                          <TableHead class="hidden md:table-cell">雇员</TableHead>
+                          <TableHead class="hidden lg:table-cell">雇员</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1002,7 +1044,7 @@ export default function ItemDetail() {
                               <TableCell class="hidden sm:table-cell text-muted-foreground">
                                 {listing.worldName || scope()}
                               </TableCell>
-                              <TableCell class="hidden md:table-cell text-muted-foreground">
+                              <TableCell class="hidden lg:table-cell text-muted-foreground">
                                 {listing.retainerName}
                               </TableCell>
                             </TableRow>

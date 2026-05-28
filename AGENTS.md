@@ -110,7 +110,7 @@ app/
 ## 物品数据
 
 - 物品中文名/图标映射来自 [thewakingsands/ffxiv-datamining-cn](https://github.com/thewakingsands/ffxiv-datamining-cn) 的 `Item.csv`
-- 图标 URL 格式：`https://xivapi.com/i/{folder:06d}/{icon_id:06d}.png`（其中 `folder = icon_id / 1000 * 1000`）
+- 图标 URL 格式：`https://www.garlandtools.org/files/icons/item/t/{icon_id}.png`
 - 物品数据随构建产物部署（`public/items.json`），运行时通过 `fetch('/items.json')` 加载
 - commit hash 在构建时注入 JS bundle（`vite.config.ts` → `define`）
 - 物品名/图标查询：`@xiv-market/shared` — `getItemName(id)` / `getItemIconUrl(id)` / `getIconUrl(iconId)`

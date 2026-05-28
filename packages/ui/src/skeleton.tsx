@@ -5,6 +5,6 @@ export function Skeleton(props: { class?: string }) {
   const [, rest] = splitProps(props, ['class'])
 
   return (
-    <div class={cn('animate-pulse rounded-md bg-primary/10', props.class)} {...rest} />
+    <div class={cn('animate-pulse rounded-md bg-primary/10', props.class)} {...rest} aria-busy="true" aria-label="加载中" />
   )
 }

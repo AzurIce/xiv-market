@@ -87,7 +87,7 @@ export const TableHead = (props: TableHeadProps) => {
     <th
       data-slot="table-head"
       class={cx(
-        "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap",
+        "text-foreground h-11 px-3 text-left align-middle font-mono uppercase text-xs whitespace-nowrap",
         props.class,
       )}
       {...rest}

@@ -12,7 +12,7 @@ export const Card = (props: CardProps) => {
     <div
       data-slot="card"
       class={cx(
-        "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
+        "bg-card text-card-foreground flex flex-col gap-4 rounded-xl border py-4 shadow-sm",
         props.class,
       )}
       {...rest}
@@ -28,7 +28,7 @@ export const CardHeader = (props: CardHeaderProps) => {
   return (
     <div
       data-slot="card-header"
-      class={cx("grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6", props.class)}
+      class={cx("grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-4", props.class)}
       {...rest}
     />
   )
@@ -68,7 +68,7 @@ export const CardContent = (props: CardContentProps) => {
   const [, rest] = splitProps(props, ["class"])
 
   return (
-    <div data-slot="card-content" class={cx("px-6", props.class)} {...rest} />
+    <div data-slot="card-content"       class={cx("px-4", props.class)} {...rest} />
   )
 }
 
@@ -80,7 +80,7 @@ export const CardFooter = (props: CardFooterProps) => {
   return (
     <div
       data-slot="card-footer"
-      class={cx("flex items-center px-6 [.border-t]:pt-6", props.class)}
+      class={cx("flex items-center px-4 [.border-t]:pt-4", props.class)}
       {...rest}
     />
   )

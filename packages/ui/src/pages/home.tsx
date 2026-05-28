@@ -35,11 +35,11 @@ function formatTime(ts: number): string {
 }
 
 function HqTag() {
-  return <span class="inline-flex items-center rounded px-1 py-px text-[10px] font-semibold leading-none bg-amber-100 text-amber-800 border border-amber-200">HQ</span>
+  return <span class="inline-flex items-center rounded px-1 py-px text-xs font-semibold leading-none bg-[#fef3c7] text-[#92400e] border border-[#fde68a]">HQ</span>
 }
 
 function NqTag() {
-  return <span class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-none bg-zinc-100 text-zinc-600 border border-zinc-200">NQ</span>
+  return <span class="inline-flex items-center rounded px-1 py-px text-xs font-medium leading-none bg-muted text-muted-foreground border border-border">NQ</span>
 }
 
 function PriceNqHq(props: { nq?: number; hq?: number }) {
@@ -110,7 +110,7 @@ function SortableHeader(props: {
         onClick={() => props.onSort(props.sortKey)}
       >
         {props.label}
-        <span class="text-[10px]">
+        <span class="text-xs">
           <Show when={isActive()} fallback={<span class="opacity-30">↕</span>}>
             {props.currentDir === 'asc' ? '↑' : '↓'}
           </Show>
@@ -125,18 +125,26 @@ function MobileItemCard(props: {
   agg?: AggregatedItemData
   onClick: () => void
 }) {
-  const iconUrl = () => getItemIconUrl(props.itemId)
+  const iconUrls = () => getItemIconUrl(props.itemId)
+  const handleIconError = (e: Event, urls: string[], idx: number) => {
+    const img = e.currentTarget as HTMLImageElement
+    if (idx < urls.length - 1) {
+      img.src = urls[idx + 1]
+    } else {
+      img.style.display = 'none'
+    }
+  }
   const minNqPrice = () => props.agg?.nq.minListingPrice
   const minHqPrice = () => props.agg?.hq.minListingPrice
   const avgNqPrice = () => props.agg?.nq.averageSalePrice
   const avgHqPrice = () => props.agg?.hq.averageSalePrice
 
   return (
-    <Card class="cursor-pointer hover:shadow-md transition-shadow" onClick={props.onClick}>
+    <Card class="cursor-pointer hover:shadow-md transition-shadow" onClick={props.onClick} role="button" tabindex="0" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onClick() } }}>
       <CardContent class="p-4 space-y-3">
         <div class="flex items-center gap-3">
-          <Show when={iconUrl()}>
-            <img src={iconUrl()!} alt="" class="h-8 w-8 rounded" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+          <Show when={iconUrls().length > 0}>
+            <img src={iconUrls()[0]} alt="" class="h-8 w-8 rounded" loading="lazy" onError={(e) => handleIconError(e, iconUrls(), 0)} />
           </Show>
           <div class="min-w-0 flex-1">
             <div class="font-medium text-sm truncate">{getItemName(props.itemId)}</div>
@@ -326,7 +334,7 @@ export default function Home() {
               }
             >
               {/* Desktop table */}
-              <div class="hidden md:block">
+              <div class="hidden lg:block">
                 <Table>
                   <TableHeader>
                     <TableRow class="hover:bg-transparent">
@@ -358,17 +366,24 @@ export default function Home() {
                           >
                             <TableCell>
                               <div class="flex items-center gap-2">
-                                <Show when={getItemIconUrl(itemId)}>
+                                <Show when={getItemIconUrl(itemId).length > 0}>
                                   <img
-                                    src={getItemIconUrl(itemId)!}
+                                    src={getItemIconUrl(itemId)[0]}
                                     alt=""
                                     class="h-6 w-6 rounded"
                                     loading="lazy"
-                                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                    onError={(e) => {
+                                      const urls = getItemIconUrl(itemId)
+                                      if (urls.length > 1) {
+                                        e.currentTarget.src = urls[1]
+                                      } else {
+                                        e.currentTarget.style.display = 'none'
+                                      }
+                                    }}
                                   />
                                 </Show>
                                 <div class="flex flex-col min-w-0">
-                                  <span class="font-medium text-sm truncate max-w-[200px]">{getItemName(itemId)}</span>
+                                  <span class="font-medium text-sm truncate max-w-xs">{getItemName(itemId)}</span>
                                   <span class="text-xs text-muted-foreground">#{itemId}</span>
                                 </div>
                               </div>
@@ -422,7 +437,7 @@ export default function Home() {
               </div>
 
               {/* Mobile cards */}
-              <div class="md:hidden px-4 space-y-3">
+              <div class="lg:hidden px-4 space-y-3">
                 <For each={sortedItems()}>
                   {(itemId) => (
                     <MobileItemCard

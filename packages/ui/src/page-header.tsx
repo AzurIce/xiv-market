@@ -15,7 +15,7 @@ export function PageHeader(props: {
     <div class={cn('mb-8', props.class)} {...rest}>
       <div class="flex items-start justify-between gap-4">
         <div>
-          <h1 class="text-3xl font-bold tracking-tight">{props.title}</h1>
+          <h1 class="text-2xl font-semibold tracking-tight">{props.title}</h1>
           {props.description && (
             <p class="text-muted-foreground mt-1">{props.description}</p>
           )}

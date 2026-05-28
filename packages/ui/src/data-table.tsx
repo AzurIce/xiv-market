@@ -7,7 +7,7 @@ export function useIsMobile() {
   const [isMobile, setIsMobile] = createSignal(false)
 
   createEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
+    const mq = window.matchMedia('(max-width: 640px)')
     const update = () => setIsMobile(mq.matches)
     update()
     mq.addEventListener('change', update)
