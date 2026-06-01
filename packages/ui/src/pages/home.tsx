@@ -1,5 +1,5 @@
-import { createResource, createSignal, createMemo, For, Show, Suspense } from 'solid-js'
-import { useNavigate } from '@solidjs/router'
+import { createEffect, createResource, createSignal, createMemo, For, Show, Suspense } from 'solid-js'
+import { useNavigate, useSearchParams } from '@solidjs/router'
 import {
   fetchMarketableItems, fetchAggregatedData,
   selectedRegion, getWorldDisplayName,
@@ -93,7 +93,7 @@ function VelocityNqHq(props: { nq?: number; hq?: number }) {
 function MobileItemCard(props: {
   itemId: number
   agg?: AggregatedItemData
-  onClick: () => void
+  onClick: (e: MouseEvent) => void
 }) {
   const iconUrls = () => getItemIconUrl(props.itemId)
   const handleIconError = (e: Event, urls: string[], idx: number) => {
@@ -114,7 +114,7 @@ function MobileItemCard(props: {
   const hqVelocity = () => props.agg?.hq.dailySaleVelocity ?? 0
 
   return (
-    <Card class="cursor-pointer hover:shadow-md transition-shadow py-2" onClick={props.onClick} role="button" tabindex="0" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onClick() } }}>
+    <Card class="cursor-pointer hover:shadow-md transition-shadow py-2" onClick={props.onClick} onAuxClick={props.onClick} role="button" tabindex="0" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onClick(e as unknown as MouseEvent) } }}>
       <CardContent class="px-2 py-0 space-y-1">
         {/* 第一行：图标 + 名称 + ID */}
         <div class="flex items-center gap-2.5">
@@ -177,9 +177,19 @@ function MobileItemCard(props: {
 
 export default function Home() {
   const navigate = useNavigate()
-  const [searchQuery, setSearchQuery] = createSignal('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialSearchQuery = typeof searchParams.q === 'string' ? searchParams.q : ''
+  const [searchQuery, setSearchQuery] = createSignal(initialSearchQuery)
   const [page, setPage] = createSignal(1)
   const PAGE_SIZE = 50
+
+  createEffect(() => {
+    const q = typeof searchParams.q === 'string' ? searchParams.q : ''
+    if (q !== searchQuery()) {
+      setSearchQuery(q)
+      setPage(1)
+    }
+  })
 
   const [marketableItems] = createResource(fetchMarketableItems)
 
@@ -220,6 +230,32 @@ export default function Home() {
 
   const getItemAgg = (itemId: number) => aggData()?.get(itemId)
 
+  const setSearch = (value: string) => {
+    setSearchQuery(value)
+    setPage(1)
+    setSearchParams(value ? { q: value } : { q: undefined }, { replace: true })
+  }
+
+  const itemPath = (itemId: number) => {
+    const q = searchQuery().trim()
+    return q ? `/item/${itemId}?q=${encodeURIComponent(q)}` : `/item/${itemId}`
+  }
+
+  const itemUrl = (itemId: number) => {
+    const url = new URL(window.location.href)
+    url.hash = itemPath(itemId)
+    return url.toString()
+  }
+
+  const openItem = (itemId: number, e?: MouseEvent) => {
+    if (e?.button === 1 || e?.ctrlKey || e?.metaKey) {
+      e.preventDefault()
+      window.open(itemUrl(itemId), '_blank', 'noopener')
+      return
+    }
+    navigate(itemPath(itemId))
+  }
+
   return (
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <PageHeader
@@ -237,15 +273,21 @@ export default function Home() {
               type="text"
               placeholder="搜索物品名称或 ID..."
               value={searchQuery()}
-              onInput={(e) => { setSearchQuery(e.currentTarget.value); setPage(1) }}
+              onInput={(e) => setSearch(e.currentTarget.value)}
               class="pl-10 pr-16"
             />
             <Show when={searchQuery()}>
               <button
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setSearchQuery('')}
+                type="button"
+                class="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => setSearch('')}
+                aria-label="清除搜索"
+                title="清除搜索"
               >
-                清除
+                <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
               </button>
             </Show>
           </div>
@@ -274,7 +316,7 @@ export default function Home() {
                     description={searchQuery() ? `未找到与 "${searchQuery()}" 匹配的物品` : "该区域暂无市场数据"}
                     action={
                       <Show when={searchQuery()}>
-                        <button class="text-sm text-primary hover:underline" onClick={() => setSearchQuery('')}>清除搜索</button>
+                        <button class="text-sm text-primary hover:underline" onClick={() => setSearch('')}>清除搜索</button>
                       </Show>
                     }
                   />
@@ -310,7 +352,8 @@ export default function Home() {
                         return (
                           <TableRow
                             class="cursor-pointer"
-                            onClick={() => navigate(`/item/${itemId}`)}
+                            onClick={(e) => openItem(itemId, e)}
+                            onAuxClick={(e) => openItem(itemId, e)}
                           >
                             <TableCell>
                               <div class="flex items-center gap-2">
@@ -391,7 +434,7 @@ export default function Home() {
                     <MobileItemCard
                       itemId={itemId}
                       agg={getItemAgg(itemId)}
-                      onClick={() => navigate(`/item/${itemId}`)}
+                      onClick={(e) => openItem(itemId, e)}
                     />
                   )}
                 </For>

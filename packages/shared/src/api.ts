@@ -70,6 +70,15 @@ export async function fetchAggregatedData(
   return results
 }
 
+function normalizeTotal(raw: any) {
+  const pricePerUnit = Number(raw.pricePerUnit ?? 0)
+  const quantity = Number(raw.quantity ?? 0)
+  const total = Number(raw.total ?? 0)
+  if (Number.isFinite(total) && total > 0) return total
+  if (!Number.isFinite(pricePerUnit) || !Number.isFinite(quantity)) return 0
+  return pricePerUnit * quantity
+}
+
 function normalizeListing(raw: any) {
   return {
     worldName: raw.worldName ?? '',
@@ -77,7 +86,7 @@ function normalizeListing(raw: any) {
     hq: raw.hq ?? false,
     pricePerUnit: raw.pricePerUnit ?? 0,
     quantity: raw.quantity ?? 0,
-    total: raw.total ?? 0,
+    total: normalizeTotal(raw),
     retainerName: raw.retainerName ?? '',
     retainerCity: raw.retainerCity ?? '',
     lastReviewTime: raw.lastReviewTime ?? 0,
@@ -92,7 +101,7 @@ function normalizeSale(raw: any) {
     quantity: raw.quantity ?? 0,
     timestamp: raw.timestamp ?? 0,
     buyerName: raw.buyerName ?? '',
-    total: raw.total ?? 0,
+    total: normalizeTotal(raw),
     worldName: raw.worldName ?? '',
   }
 }

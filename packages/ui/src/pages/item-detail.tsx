@@ -1,5 +1,5 @@
 import { createResource, createMemo, createSignal, createEffect, Show, Suspense, For, on, onMount, onCleanup } from 'solid-js'
-import { useParams, A } from '@solidjs/router'
+import { useParams, A, useSearchParams } from '@solidjs/router'
 import Chart from 'chart.js/auto'
 import { ViolinController, Violin } from '@sgratzl/chartjs-chart-boxplot'
 import { fetchMarketData, fetchHistoryData, selectedRegion, getItemName, getItemIconUrl, getDcNameByWorldName, baseUrl } from '@xiv-market/shared'
@@ -681,6 +681,7 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
 
 export default function ItemDetail() {
   const params = useParams()
+  const [searchParams] = useSearchParams()
   const itemId = createMemo(() => params.id)
   const [activeTab, setActiveTab] = createSignal('listings')
   const [listingChartTab, setListingChartTab] = createSignal('bar')
@@ -733,6 +734,9 @@ export default function ItemDetail() {
 
   const currentListings = createMemo(() => marketData()?.listings ?? [])
   const history = createMemo(() => historyData()?.entries ?? [])
+  const showHistoryWorld = createMemo(() =>
+    history().some((sale) => Boolean(sale.worldName) && sale.worldName !== scope())
+  )
 
   const stats = createMemo(() => {
     const data = marketData()
@@ -760,6 +764,11 @@ export default function ItemDetail() {
     }).catch(() => {})
   }
 
+  const backHref = createMemo(() => {
+    const q = typeof searchParams.q === 'string' ? searchParams.q.trim() : ''
+    return q ? `/?q=${encodeURIComponent(q)}` : '/'
+  })
+
   return (
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Sentinel: Intersection Observer 监听此元素是否离开视口 */}
@@ -774,7 +783,7 @@ export default function ItemDetail() {
       >
         {/* 返回按钮 */}
         <A
-          href="/"
+          href={backHref()}
           class="flex-shrink-0 rounded-md hover:bg-accent/50 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors duration-300 h-8 w-8"
           title="返回市场"
         >
@@ -1089,6 +1098,10 @@ export default function ItemDetail() {
                           <TableHead>单价</TableHead>
                           <TableHead>数量</TableHead>
                           <TableHead>总价</TableHead>
+                          <TableHead>买家</TableHead>
+                          <Show when={showHistoryWorld()}>
+                            <TableHead>服务器</TableHead>
+                          </Show>
                           <TableHead>时间</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1108,6 +1121,14 @@ export default function ItemDetail() {
                               <TableCell class="font-medium">
                                 {formatGil(sale.total)} Gil
                               </TableCell>
+                              <TableCell class="text-muted-foreground">
+                                {sale.buyerName || '-'}
+                              </TableCell>
+                              <Show when={showHistoryWorld()}>
+                                <TableCell class="text-muted-foreground">
+                                  {sale.worldName || '-'}
+                                </TableCell>
+                              </Show>
                               <TableCell class="text-muted-foreground text-xs">
                                 {new Date(sale.timestamp * 1000).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                               </TableCell>
