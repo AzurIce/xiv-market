@@ -79,10 +79,27 @@ function filterOutliers(values: number[]): number[] {
 
 function computeStats(
   server: string,
-  prices: number[],
+  listings: any[],
   shouldFilter: boolean
 ) {
+  const prices = listings
+    .map((l) => Number(l.pricePerUnit ?? 0))
+    .filter((v) => Number.isFinite(v) && v > 0)
   const filtered = shouldFilter ? filterOutliers(prices) : prices
+  if (!filtered.length) {
+    return {
+      server,
+      dc: getDcNameByWorldName(server) || '未知',
+      min: 0,
+      max: 0,
+      p25: 0,
+      p75: 0,
+      median: 0,
+      count: 0,
+      listingCount: listings.length,
+      lastReviewTime: Math.max(0, ...listings.map((l) => Number(l.lastReviewTime ?? 0))) * 1000,
+    }
+  }
   const sorted = [...filtered].sort((a, b) => a - b)
   const min = sorted[0]
   const max = sorted[sorted.length - 1]
@@ -90,7 +107,19 @@ function computeStats(
   const p75 = sorted[Math.floor(sorted.length * 0.75)]
   const mid = Math.floor(sorted.length / 2)
   const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
-  return { server, dc: getDcNameByWorldName(server) || '未知', min, max, p25, p75, median, count: filtered.length }
+  const lastReviewTime = Math.max(0, ...listings.map((l) => Number(l.lastReviewTime ?? 0))) * 1000
+  return {
+    server,
+    dc: getDcNameByWorldName(server) || '未知',
+    min,
+    max,
+    p25,
+    p75,
+    median,
+    count: filtered.length,
+    listingCount: listings.length,
+    lastReviewTime,
+  }
 }
 
 function ServerListingViolin(props: { listings: any[] }) {
@@ -239,11 +268,11 @@ function ServerListingBarChart(props: { listings: any[] }) {
     const listings = props.listings
     if (!listings?.length) return { data: [] as ReturnType<typeof computeStats>[], globalMax: 0 }
 
-    const byServer: Record<string, number[]> = {}
+    const byServer: Record<string, any[]> = {}
     for (const l of listings) {
       const name = l.worldName || '未知服务器'
       if (!byServer[name]) byServer[name] = []
-      byServer[name].push(l.pricePerUnit)
+      byServer[name].push(l)
     }
 
     const servers = Object.keys(byServer).sort((a, b) => {
@@ -303,13 +332,15 @@ function ServerListingBarChart(props: { listings: any[] }) {
 
       {/* 统一 grid：表头和数据在同一个 grid 中，列宽全局一致 */}
       <div class="overflow-x-auto -mx-4 px-4 sm:-mx-6 sm:px-6">
-        <div class="grid grid-cols-[minmax(4.5rem,auto)_minmax(4.5rem,auto)_minmax(5.5rem,auto)_minmax(3.5rem,auto)_1fr] gap-x-2 sm:gap-x-3 gap-y-1 text-xs px-0.5 min-w-[520px]">
+        <div class="grid grid-cols-[minmax(4.5rem,auto)_minmax(4.5rem,auto)_minmax(5.5rem,auto)_minmax(3.5rem,auto)_minmax(12rem,1fr)_minmax(3.5rem,auto)_minmax(5rem,auto)] gap-x-2 sm:gap-x-3 gap-y-1 text-xs px-0.5 min-w-[700px]">
         {/* 表头 */}
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">最低价</span>
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">中位价</span>
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">P25~P75</span>
         <span class="text-right whitespace-nowrap text-muted-foreground">服务器</span>
         <div></div>
+        <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">挂单量</span>
+        <span class="text-right whitespace-nowrap text-muted-foreground">上次更新</span>
 
         {/* 数据行：display: contents 让子元素直接参与父级 grid */}
         <For each={serverData().data}>
@@ -364,6 +395,12 @@ function ServerListingBarChart(props: { listings: any[] }) {
                     }}
                   />
                 </div>
+                <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5">
+                  {item.listingCount.toLocaleString('zh-CN')}
+                </span>
+                <span class="text-right whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5" title={item.lastReviewTime ? new Date(item.lastReviewTime).toLocaleString('zh-CN') : undefined}>
+                  {formatTime(item.lastReviewTime)}
+                </span>
               </div>
             )
           }}
