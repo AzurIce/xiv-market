@@ -23,7 +23,7 @@ bun run dev
 bun run build
 
 # 构建生产版本（指定 base 路径，如 GitHub Pages 子目录）
-BASE_URL=/xiv-market-lite/ bun run build
+BASE_URL=/xiv-market/ bun run build
 
 # 更新物品数据（CI/CD 使用）
 bun run update-items
@@ -50,7 +50,7 @@ packages/
     ├── src/pages/       # 共享页面（Home、ItemDetail、Settings）
     └── src/index.ts     # 统一导出
 
-app/                     # xiv-market-lite 应用（GitHub Pages 部署）
+app/                     # xiv-market 应用（GitHub Pages 部署）
 ├── src/App.tsx          # 路由外壳
 ├── vite.config.ts       # Vite 配置（base 通过环境变量控制）
 └── public/              # 静态资源（items.json）
@@ -99,7 +99,7 @@ app/
 
 1. **Git Submodule**（推荐）
    ```bash
-   git submodule add https://github.com/AzurIce/xiv-market-lite.git external/xiv-market-lite
+   git submodule add https://github.com/AzurIce/xiv-market.git external/xiv-market
    ```
    然后在 `package.json` 中使用 `file:` 或 `workspace:*` 引用。
 

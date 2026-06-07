@@ -5,17 +5,14 @@ import { Select, SelectValue, SelectTrigger, SelectPortal, SelectContent, Select
 
 export function Navbar(props: {
   navItems?: { href: string; label: string; end?: boolean }[]
-  variant?: 'lite' | 'pro'
+  variant?: 'pro'
   githubUrl?: string
 }) {
-  const variant = () => props.variant ?? 'lite'
+  const variant = () => props.variant
 
   const isPro = () => variant() === 'pro'
 
-  const badgeClass = () =>
-    isPro()
-      ? 'bg-[rgba(245,158,11,0.15)] text-[#d97706] border-[rgba(245,158,11,0.25)]'
-      : 'bg-muted text-muted-foreground border-border'
+  const badgeClass = () => 'bg-[rgba(245,158,11,0.15)] text-[#d97706] border-[rgba(245,158,11,0.25)]'
 
   const [dataCentersRes] = createResource(fetchDataCenters)
   const [worldsRes] = createResource(fetchWorlds)
@@ -43,9 +40,11 @@ export function Navbar(props: {
           </div>
           <div class="hidden sm:flex items-center gap-2">
             <span class="text-base font-semibold tracking-tight text-foreground">Market</span>
-            <span class={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider border ${badgeClass()}`}>
-              {variant()}
-            </span>
+            {isPro() && (
+              <span class={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider border ${badgeClass()}`}>
+                {variant()}
+              </span>
+            )}
           </div>
         </A>
 

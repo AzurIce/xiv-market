@@ -8,7 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * 获取当前部署的 base URL，用于拼接静态资源路径。
  * GitHub Pages 子目录部署时，Vite 的 `import.meta.env.BASE_URL`
- * 会被设置为 `/xiv-market-lite/`，但开发环境仍为 `/`。
+ * 会被设置为 `/xiv-market/`，但开发环境仍为 `/`。
  */
 export function baseUrl(): string {
   return import.meta.env.PROD ? import.meta.env.BASE_URL : '/'

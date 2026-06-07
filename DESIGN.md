@@ -43,9 +43,6 @@ colors:
   chart-5: "#fe9a00"
 
   # Variant badges
-  lite-badge-bg: "#f1f5f9"
-  lite-badge-text: "#64748b"
-  lite-badge-border: "#e2e8f0"
   pro-badge-bg: "rgba(245,158,11,0.15)"
   pro-badge-text: "#d97706"
   pro-badge-border: "rgba(245,158,11,0.25)"
@@ -118,10 +115,6 @@ components:
     activeTextColor: "{colors.ink}"
     typography: "{typography.body-strong}"
   nav-badge:
-    lite:
-      backgroundColor: "{colors.lite-badge-bg}"
-      textColor: "{colors.lite-badge-text}"
-      borderColor: "{colors.lite-badge-border}"
     pro:
       backgroundColor: "{colors.pro-badge-bg}"
       textColor: "{colors.pro-badge-text}"
@@ -303,7 +296,6 @@ XIV Market 是一个面向《最终幻想14》玩家的市场价格查询工具�
 - **Ring** (`{colors.ring}` — `#a1a1a1`): 焦点环、轮廓指示器。
 
 ### Variant Badges
-- **Lite** (`{colors.lite-badge-bg}` — `#f1f5f9`): 灰色低调标签，用于 lite 版本标识。
 - **Pro** (`{colors.pro-badge-bg}` — `rgba(245,158,11,0.15)`): 琥珀色强调标签，用于 pro 版本标识。
 
 ### Charts
@@ -399,7 +391,6 @@ XIV Market 是一个面向《最终幻想14》玩家的市场价格查询工具�
 - Default color `{colors.muted}`, hover `{colors.body}`, active `{colors.ink}`, typography `{typography.body-strong}`.
 
 **`nav-badge`** — 版本标识标签。
-- **Lite**: background `{colors.lite-badge-bg}`, text `{colors.lite-badge-text}`, border `{colors.lite-badge-border}`. 灰色低调，暗示公开/基础版本。
 - **Pro**: background `{colors.pro-badge-bg}`, text `{colors.pro-badge-text}`, border `{colors.pro-badge-border}`. 琥珀色强调，暗示增强/专业版本。
 
 ### Table

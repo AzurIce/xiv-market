@@ -13,8 +13,7 @@ function Layout(props: { children?: any }) {
   return (
     <div class="min-h-screen bg-background text-foreground">
       <Navbar
-        variant="lite"
-        githubUrl="https://github.com/AzurIce/xiv-market-lite"
+        githubUrl="https://github.com/AzurIce/xiv-market"
         navItems={[{ href: '/', label: '市场', end: true }]}
       />
       <main class="flex-1">{props.children}</main>

@@ -1,6 +1,6 @@
-# XIV Market Lite
+# XIV Market
 
-XIV Market 的轻量版，使用 [Universalis](https://universalis.app) 公开 API 直接查询 FFXIV 市场行情。无需后端，纯前端静态部署。
+XIV Market 使用 [Universalis](https://universalis.app) 公开 API 直接查询 FFXIV 市场行情。无需后端，纯前端静态部署。
 
 ## 功能
 
