@@ -934,6 +934,15 @@ export default function ItemDetail() {
   const [scope, setScope] = createSignal(selectedRegion())
   const [isScrolled, setIsScrolled] = createSignal(false)
 
+  createEffect(() => {
+    const name = getItemName(Number(itemId()))
+    document.title = name ? `XIV Market - ${name}` : 'XIV Market'
+  })
+
+  onCleanup(() => {
+    document.title = 'XIV Market'
+  })
+
   createEffect(on(selectedRegion, (region) => {
     setScope(region)
   }))
