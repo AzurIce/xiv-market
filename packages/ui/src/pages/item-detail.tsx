@@ -2,7 +2,7 @@ import { createResource, createMemo, createSignal, createEffect, Show, Suspense,
 import { useParams, A, useSearchParams } from '@solidjs/router'
 import Chart from 'chart.js/auto'
 import { ViolinController, Violin } from '@sgratzl/chartjs-chart-boxplot'
-import { fetchMarketData, fetchHistoryData, selectedRegion, getItemName, getItemIconUrl, getDcNameByWorldName, baseUrl } from '@xiv-market/shared'
+import { fetchMarketData, fetchHistoryData, selectedRegion, dataCenters, worlds, getItemName, getItemIconUrl, getDcNameByWorldName, baseUrl } from '@xiv-market/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
 import { Badge } from '../badge'
 import { Skeleton } from '../skeleton'
@@ -25,10 +25,77 @@ const DC_COLORS: Record<ChinaDcName, { solid: string; bg: string; point: string 
 }
 
 const FALLBACK_DC_COLOR = { solid: '#9ca3af', bg: '#9ca3af80', point: '#9ca3af80' }
+const SERVER_COLORS = [
+  { solid: '#38bdf8', bg: '#38bdf880', point: '#38bdf880' },
+  { solid: '#fb7185', bg: '#fb718580', point: '#fb718580' },
+  { solid: '#4ade80', bg: '#4ade8080', point: '#4ade8080' },
+  { solid: '#fbbf24', bg: '#fbbf2480', point: '#fbbf2480' },
+  { solid: '#a78bfa', bg: '#a78bfa80', point: '#a78bfa80' },
+  { solid: '#f472b6', bg: '#f472b680', point: '#f472b680' },
+  { solid: '#2dd4bf', bg: '#2dd4bf80', point: '#2dd4bf80' },
+  { solid: '#94a3b8', bg: '#94a3b880', point: '#94a3b880' },
+]
 
 function getDcColor(dc: string | null | undefined) {
   if (dc && dc in DC_COLORS) return DC_COLORS[dc as ChinaDcName]
   return FALLBACK_DC_COLOR
+}
+
+type ScopeKind = 'region' | 'dc' | 'world'
+
+function getScopeKind(scope: string): ScopeKind {
+  if (dataCenters.some((dc) => dc.region === scope)) return 'region'
+  if (dataCenters.some((dc) => dc.name === scope)) return 'dc'
+  return 'world'
+}
+
+function getWorldNamesInDc(dcName: string): string[] {
+  const dc = dataCenters.find((d) => d.name === dcName)
+  if (!dc) return []
+  return dc.worlds
+    .map((worldId) => worlds.find((world) => world.id === worldId)?.name)
+    .filter((name): name is string => Boolean(name))
+}
+
+function getChartGroupName(scope: string, worldName: string | undefined): string {
+  const kind = getScopeKind(scope)
+  if (kind === 'region') return getDcNameByWorldName(worldName || '') || '未知'
+  if (kind === 'dc') return worldName || '未知服务器'
+  return worldName || scope
+}
+
+function getChartGroupOrder(scope: string, presentGroups: string[]): string[] {
+  const present = new Set(presentGroups)
+  const kind = getScopeKind(scope)
+
+  if (kind === 'region') {
+    const regionDcs = dataCenters.filter((dc) => dc.region === scope).map((dc) => dc.name)
+    const ordered: string[] = CHINA_DC_NAMES.filter((name) => regionDcs.includes(name) && present.has(name))
+    for (const dc of regionDcs) {
+      if (!ordered.includes(dc) && present.has(dc)) ordered.push(dc)
+    }
+    return ordered
+  }
+
+  if (kind === 'dc') {
+    const ordered = getWorldNamesInDc(scope).filter((name) => present.has(name))
+    for (const group of presentGroups) {
+      if (!ordered.includes(group)) ordered.push(group)
+    }
+    return ordered
+  }
+
+  return presentGroups.slice(0, 1)
+}
+
+function getChartGroupColor(scope: string, groupName: string) {
+  const kind = getScopeKind(scope)
+  if (kind === 'region') return getDcColor(groupName)
+  if (kind === 'dc') {
+    const index = getWorldNamesInDc(scope).indexOf(groupName)
+    return SERVER_COLORS[index >= 0 ? index % SERVER_COLORS.length : 0]
+  }
+  return getDcColor(getDcNameByWorldName(groupName))
 }
 
 function formatGil(v: number): string {
@@ -85,6 +152,48 @@ function PriceDiff(props: { nq?: number; hq?: number; label: string }) {
         </Show>
       </div>
     </div>
+  )
+}
+
+function ListingTableSkeleton() {
+  return (
+    <div class="space-y-2" aria-busy="true" aria-label="挂单加载中">
+      <div class="grid grid-cols-[3rem_1fr_3rem_1fr_5rem_5rem] gap-4 px-3 py-2">
+        <For each={Array.from({ length: 6 })}>
+          {() => <Skeleton class="h-4 w-full" />}
+        </For>
+      </div>
+      <For each={Array.from({ length: 8 })}>
+        {() => (
+          <div class="grid grid-cols-[3rem_1fr_3rem_1fr_5rem_5rem] gap-4 px-3 py-2">
+            <Skeleton class="h-6 w-10" />
+            <Skeleton class="h-5 w-24" />
+            <Skeleton class="h-5 w-8" />
+            <Skeleton class="h-5 w-28" />
+            <Skeleton class="h-5 w-16" />
+            <Skeleton class="h-5 w-16" />
+          </div>
+        )}
+      </For>
+    </div>
+  )
+}
+
+function ListingChartSkeleton() {
+  return (
+    <Card class="mb-6 py-3" aria-busy="true" aria-label="挂单价格分布加载中">
+      <CardHeader class="pb-2">
+        <Skeleton class="h-5 w-28" />
+        <Skeleton class="h-4 w-40" />
+      </CardHeader>
+      <CardContent class="pt-0">
+        <div class="flex gap-2 mb-4">
+          <Skeleton class="h-9 w-20" />
+          <Skeleton class="h-9 w-24" />
+        </div>
+        <Skeleton class="h-[300px] w-full" />
+      </CardContent>
+    </Card>
   )
 }
 
@@ -145,11 +254,16 @@ function computeStats(
   }
 }
 
-function ServerListingViolin(props: { listings: any[] }) {
+function ServerListingViolin(props: { listings: any[]; scope: string }) {
   let canvasRef!: HTMLCanvasElement
 
   createEffect(() => {
-    if (!canvasRef || !props.listings?.length) return
+    if (!canvasRef) return
+
+    const existing = Chart.getChart(canvasRef)
+    if (existing) existing.destroy()
+
+    if (!props.listings?.length) return
 
     const ctx = canvasRef.getContext('2d')
     if (!ctx) return
@@ -170,8 +284,10 @@ function ServerListingViolin(props: { listings: any[] }) {
     const filteredData = servers.map((s) => filterOutliers(byServer[s]))
 
     const serverDcs = servers.map((s) => getDcNameByWorldName(s) || '未知')
-    const bgColors = serverDcs.map((dc) => getDcColor(dc).bg)
-    const borderColors = serverDcs.map((dc) => getDcColor(dc).solid)
+    const serverGroups = servers.map((server) => getChartGroupName(props.scope, server))
+    const legendGroups = getChartGroupOrder(props.scope, Array.from(new Set(serverGroups)))
+    const bgColors = serverGroups.map((group) => getChartGroupColor(props.scope, group).bg)
+    const borderColors = serverGroups.map((group) => getChartGroupColor(props.scope, group).solid)
 
     // 计算各服务器统计量用于 tooltip
     const serverStats = new Map<string, { min: number; max: number; median: number; mean: number; count: number; dc: string }>()
@@ -206,14 +322,14 @@ function ServerListingViolin(props: { listings: any[] }) {
         maintainAspectRatio: false,
         plugins: {
           legend: {
-            display: true,
+            display: getScopeKind(props.scope) !== 'world',
             position: 'top',
             onClick: () => undefined,
             labels: {
-              generateLabels: () => CHINA_DC_NAMES.map((name, index) => ({
+              generateLabels: () => legendGroups.map((name, index) => ({
                 text: name,
-                fillStyle: DC_COLORS[name].bg,
-                strokeStyle: DC_COLORS[name].solid,
+                fillStyle: getChartGroupColor(props.scope, name).bg,
+                strokeStyle: getChartGroupColor(props.scope, name).solid,
                 lineWidth: 1,
                 hidden: false,
                 datasetIndex: 0,
@@ -280,7 +396,7 @@ function ServerListingViolin(props: { listings: any[] }) {
   )
 }
 
-function ServerListingBarChart(props: { listings: any[] }) {
+function ServerListingBarChart(props: { listings: any[]; scope: string }) {
   const [hideOutliers, setHideOutliers] = createSignal(true)
 
   const serverData = createMemo(() => {
@@ -303,6 +419,12 @@ function ServerListingBarChart(props: { listings: any[] }) {
     }
 
     const servers = Object.keys(byServer).sort((a, b) => {
+      const groupA = getChartGroupName(props.scope, a)
+      const groupB = getChartGroupName(props.scope, b)
+      const groupOrder = getChartGroupOrder(props.scope, [groupA, groupB])
+      const orderA = groupOrder.indexOf(groupA)
+      const orderB = groupOrder.indexOf(groupB)
+      if (orderA !== orderB) return orderA - orderB
       const dcA = getDcNameByWorldName(a) || '未知'
       const dcB = getDcNameByWorldName(b) || '未知'
       if (dcA !== dcB) return dcA.localeCompare(dcB)
@@ -455,7 +577,7 @@ function ServerListingBarChart(props: { listings: any[] }) {
             const p75Pct = valuePct(item.p75)
             const medianPct = valuePct(item.median)
             const rangeW = p75Pct - p25Pct
-            const color = getDcColor(item.dc)
+            const color = getChartGroupColor(props.scope, getChartGroupName(props.scope, item.server))
 
             return (
               <div class="contents group cursor-pointer">
@@ -662,7 +784,7 @@ function ServerHistoryTrendChart(props: { history: any[] }) {
   )
 }
 
-function ServerHistoryScatterChart(props: { history: any[] }) {
+function ServerHistoryScatterChart(props: { history: any[]; scope: string }) {
   let canvasRef!: HTMLCanvasElement
 
   createEffect(() => {
@@ -684,66 +806,48 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
     const allPrices = filtered.map(h => h.pricePerUnit)
     const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0
 
-    // Detect multi-world
-    const uniqueWorlds = new Set(filtered.map(h => h.worldName).filter(Boolean))
-    const isMultiWorld = uniqueWorlds.size > 1
+    const scopeKind = getScopeKind(props.scope)
+    const byGroup: Record<string, any[]> = {}
 
-    let datasets: any[]
+    for (const h of filtered) {
+      const group = getChartGroupName(props.scope, h.worldName)
+      if (!byGroup[group]) byGroup[group] = []
+      byGroup[group].push({
+        x: h.timestamp * 1000,
+        y: h.pricePerUnit,
+        qty: h.quantity,
+        world: h.worldName,
+      })
+    }
 
-    if (isMultiWorld) {
-      const byDc: Record<string, any[]> = {}
-      for (const name of CHINA_DC_NAMES) byDc[name] = []
+    const groupNames = getChartGroupOrder(props.scope, Object.keys(byGroup))
+    const datasets = groupNames.map(name => ({
+      label: name,
+      data: byGroup[name],
+      pointRadius: (ctx: any) => {
+        const qty = ctx.raw?.qty ?? 1
+        return Math.min(20, Math.max(6, qty * 2))
+      },
+      pointBackgroundColor: getChartGroupColor(props.scope, name).point,
+      pointBorderColor: 'transparent',
+    }))
 
-      for (const h of filtered) {
-        const dc = getDcNameByWorldName(h.worldName) || ''
-        if (byDc[dc]) {
-          byDc[dc].push({
-            x: h.timestamp * 1000,
-            y: h.pricePerUnit,
-            qty: h.quantity,
-            world: h.worldName,
-          })
-        }
-      }
-
-      datasets = CHINA_DC_NAMES.map(name => ({
-        label: name,
-        data: byDc[name],
+    if (scopeKind === 'world' && datasets.length === 0) {
+      datasets.push({
+        label: props.scope,
+        data: filtered.map(h => ({
+          x: h.timestamp * 1000,
+          y: h.pricePerUnit,
+          qty: h.quantity,
+          world: h.worldName,
+        })),
         pointRadius: (ctx: any) => {
           const qty = ctx.raw?.qty ?? 1
           return Math.min(20, Math.max(6, qty * 2))
         },
-        pointBackgroundColor: getDcColor(name).point,
+        pointBackgroundColor: getChartGroupColor(props.scope, props.scope).point,
         pointBorderColor: 'transparent',
-      }))
-    } else {
-      const hqData = filtered.filter(h => h.hq).map(h => ({
-        x: h.timestamp * 1000,
-        y: h.pricePerUnit,
-        qty: h.quantity,
-      }))
-      const nqData = filtered.filter(h => !h.hq).map(h => ({
-        x: h.timestamp * 1000,
-        y: h.pricePerUnit,
-        qty: h.quantity,
-      }))
-
-      datasets = [
-        {
-          label: 'HQ',
-          data: hqData,
-          pointRadius: (ctx: any) => Math.min(20, Math.max(6, (ctx.raw?.qty ?? 1) * 2)),
-          pointBackgroundColor: '#22d3ee80',
-          pointBorderColor: 'transparent',
-        },
-        {
-          label: 'NQ',
-          data: nqData,
-          pointRadius: (ctx: any) => Math.min(20, Math.max(6, (ctx.raw?.qty ?? 1) * 2)),
-          pointBackgroundColor: '#a78bfa80',
-          pointBorderColor: 'transparent',
-        },
-      ]
+      })
     }
 
     const chart = new Chart(ctx, {
@@ -753,7 +857,7 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: true, position: 'top' },
+          legend: { display: scopeKind !== 'world', position: 'top' },
           tooltip: {
             backgroundColor: '#ffffff',
             titleColor: '#0a0a0a',
@@ -847,33 +951,94 @@ export default function ItemDetail() {
     onCleanup(() => observer.disconnect())
   })
 
-  const [marketDataMap] = createResource(
+  const worldNameById = createMemo(() => {
+    const map = new Map<number, string>()
+    for (const world of worlds) {
+      map.set(world.id, world.name)
+    }
+    return map
+  })
+
+  const scopedWorldNames = createMemo(() => {
+    const s = scope()
+    const map = worldNameById()
+
+    const regionDcs = dataCenters.filter((dc) => dc.region === s)
+    if (regionDcs.length) {
+      const names = new Set<string>()
+      for (const dc of regionDcs) {
+        for (const worldId of dc.worlds) {
+          const name = map.get(worldId)
+          if (name) names.add(name)
+        }
+      }
+      return names
+    }
+
+    const dc = dataCenters.find((d) => d.name === s)
+    if (dc) {
+      const names = new Set<string>()
+      for (const worldId of dc.worlds) {
+        const name = map.get(worldId)
+        if (name) names.add(name)
+      }
+      return names
+    }
+
+    return new Set([s])
+  })
+
+  const filterRowsByScope = <T extends { worldName?: string }>(rows: T[]) => {
+    const names = scopedWorldNames()
+    return rows.filter((row) => {
+      if (row.worldName) return names.has(row.worldName)
+      return names.size === 1 && names.has(scope())
+    })
+  }
+
+  const [marketDataResult] = createResource(
     () => {
       const id = itemId()
       if (!id) return null
       return { scope: scope(), id }
     },
-    ({ scope: s, id }: { scope: string; id: string }) => fetchMarketData(s, id)
+    async ({ scope: s, id }: { scope: string; id: string }) => ({
+      scope: s,
+      id,
+      data: await fetchMarketData(s, id),
+    })
   )
 
-  const [historyData] = createResource(
+  const [historyDataResult] = createResource(
     () => {
       const id = itemId()
       if (!id) return null
       return { scope: scope(), id }
     },
-    ({ scope: s, id }: { scope: string; id: string }) => fetchHistoryData(s, id)
+    async ({ scope: s, id }: { scope: string; id: string }) => ({
+      scope: s,
+      id,
+      data: await fetchHistoryData(s, id),
+    })
   )
 
   const marketData = createMemo(() => {
-    const map = marketDataMap()
-    if (!map) return null
+    const result = marketDataResult()
+    if (!result || result.scope !== scope() || result.id !== itemId()) return null
     const id = Number(itemId())
-    return map[id] ?? null
+    return result.data[id] ?? null
   })
 
-  const currentListings = createMemo(() => marketData()?.listings ?? [])
-  const history = createMemo(() => historyData()?.entries ?? [])
+  const currentListings = createMemo(() => filterRowsByScope(marketData()?.listings ?? []))
+  const history = createMemo(() => {
+    const result = historyDataResult()
+    if (!result || result.scope !== scope() || result.id !== itemId()) return []
+    return filterRowsByScope(result.data.entries ?? [])
+  })
+  const isMarketDataLoading = createMemo(() => {
+    const result = marketDataResult()
+    return marketDataResult.loading || Boolean(result && (result.scope !== scope() || result.id !== itemId()))
+  })
   const showHistoryWorld = createMemo(() =>
     history().some((sale) => Boolean(sale.worldName) && sale.worldName !== scope())
   )
@@ -892,7 +1057,7 @@ export default function ItemDetail() {
       nqVelocity: data.nqSaleVelocity,
       hqVelocity: data.hqSaleVelocity,
       lastUploadTime: data.lastUploadTime,
-      listingCount: data.listings?.length ?? 0,
+      listingCount: currentListings().length,
     }
   })
 
@@ -1100,27 +1265,29 @@ export default function ItemDetail() {
         </div>
       </Show>
 
-      <Show when={currentListings().length > 0}>
-        <Card class="mb-6 py-3">
-          <CardHeader class="pb-2">
-            <CardTitle class="text-sm">挂单价格分布</CardTitle>
-            <CardDescription class="text-xs">各服务器挂单价格可视化</CardDescription>
-          </CardHeader>
-          <CardContent class="pt-0">
-            <Tabs value={listingChartTab()} onChange={setListingChartTab}>
-              <TabsList class="mb-4">
-                <TabsTrigger value="bar">条形图</TabsTrigger>
-                <TabsTrigger value="violin">小提琴图</TabsTrigger>
-              </TabsList>
-              <TabsContent value="bar">
-                <ServerListingBarChart listings={currentListings()} />
-              </TabsContent>
-              <TabsContent value="violin">
-                <ServerListingViolin listings={currentListings()} />
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+      <Show when={!isMarketDataLoading()} fallback={<ListingChartSkeleton />}>
+        <Show when={currentListings().length > 0}>
+          <Card class="mb-6 py-3">
+            <CardHeader class="pb-2">
+              <CardTitle class="text-sm">挂单价格分布</CardTitle>
+              <CardDescription class="text-xs">各服务器挂单价格可视化</CardDescription>
+            </CardHeader>
+            <CardContent class="pt-0">
+              <Tabs value={listingChartTab()} onChange={setListingChartTab}>
+                <TabsList class="mb-4">
+                  <TabsTrigger value="bar">条形图</TabsTrigger>
+                  <TabsTrigger value="violin">小提琴图</TabsTrigger>
+                </TabsList>
+                <TabsContent value="bar">
+                  <ServerListingBarChart listings={currentListings()} scope={scope()} />
+                </TabsContent>
+                <TabsContent value="violin">
+                  <ServerListingViolin listings={currentListings()} scope={scope()} />
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </Show>
       </Show>
 
       <Show when={history().length > 0}>
@@ -1139,7 +1306,7 @@ export default function ItemDetail() {
                 <ServerHistoryTrendChart history={history()} />
               </TabsContent>
               <TabsContent value="scatter">
-                <ServerHistoryScatterChart history={history()} />
+                <ServerHistoryScatterChart history={history()} scope={scope()} />
               </TabsContent>
             </Tabs>
           </CardContent>
@@ -1157,10 +1324,14 @@ export default function ItemDetail() {
             <Card class="py-3">
               <CardHeader class="pb-2">
                 <CardTitle class="text-sm">当前挂单</CardTitle>
-                <CardDescription class="text-xs">共 {currentListings().length} 个挂单</CardDescription>
+                <CardDescription class="text-xs">
+                  <Show when={!isMarketDataLoading()} fallback="正在加载挂单数据">
+                    共 {currentListings().length} 个挂单
+                  </Show>
+                </CardDescription>
               </CardHeader>
               <CardContent class="pt-0">
-                <Suspense fallback={<Skeleton class="h-[300px]" />}>
+                <Show when={!isMarketDataLoading()} fallback={<ListingTableSkeleton />}>
                   <Show
                     when={currentListings().length > 0}
                     fallback={
@@ -1209,7 +1380,7 @@ export default function ItemDetail() {
                       </TableBody>
                     </Table>
                   </Show>
-                </Suspense>
+                </Show>
               </CardContent>
             </Card>
           </TabsContent>
