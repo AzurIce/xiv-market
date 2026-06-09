@@ -14,8 +14,31 @@ import { ScopeSelect } from '../scope-select'
 
 Chart.register(ViolinController, Violin)
 
+const CHINA_DC_NAMES = ['陆行鸟', '莫古力', '猫小胖', '豆豆柴'] as const
+type ChinaDcName = typeof CHINA_DC_NAMES[number]
+
+const DC_COLORS: Record<ChinaDcName, { solid: string; bg: string; point: string }> = {
+  '陆行鸟': { solid: '#22d3ee', bg: '#22d3ee80', point: '#22d3ee80' },
+  '莫古力': { solid: '#a78bfa', bg: '#a78bfa80', point: '#a78bfa80' },
+  '猫小胖': { solid: '#fbbf24', bg: '#fbbf2480', point: '#fbbf2480' },
+  '豆豆柴': { solid: '#34d399', bg: '#34d39980', point: '#34d39980' },
+}
+
+const FALLBACK_DC_COLOR = { solid: '#9ca3af', bg: '#9ca3af80', point: '#9ca3af80' }
+
+function getDcColor(dc: string | null | undefined) {
+  if (dc && dc in DC_COLORS) return DC_COLORS[dc as ChinaDcName]
+  return FALLBACK_DC_COLOR
+}
+
 function formatGil(v: number): string {
   return v.toLocaleString('zh-CN')
+}
+
+function formatAxisGil(v: number): string {
+  if (v >= 1000000) return `${Number((v / 1000000).toPrecision(3))}M`
+  if (v >= 1000) return `${Number((v / 1000).toPrecision(3))}K`
+  return formatGil(Math.round(v))
 }
 
 function formatTime(ts: number): string {
@@ -146,28 +169,9 @@ function ServerListingViolin(props: { listings: any[] }) {
     })
     const filteredData = servers.map((s) => filterOutliers(byServer[s]))
 
-    // 按 DC 分组并分配颜色
-    const dcColors = [
-      { bg: 'rgba(59, 130, 246, 0.5)', border: 'rgb(59, 130, 246)' },    // blue
-      { bg: 'rgba(234, 179, 8, 0.5)', border: 'rgb(234, 179, 8)' },      // yellow
-      { bg: 'rgba(16, 185, 129, 0.5)', border: 'rgb(16, 185, 129)' },    // green
-      { bg: 'rgba(239, 68, 68, 0.5)', border: 'rgb(239, 68, 68)' },      // red
-      { bg: 'rgba(139, 92, 246, 0.5)', border: 'rgb(139, 92, 246)' },    // purple
-      { bg: 'rgba(236, 72, 153, 0.5)', border: 'rgb(236, 72, 153)' },    // pink
-      { bg: 'rgba(20, 184, 166, 0.5)', border: 'rgb(20, 184, 166)' },    // teal
-      { bg: 'rgba(245, 158, 11, 0.5)', border: 'rgb(245, 158, 11)' },    // orange
-    ]
-    const dcColorMap = new Map<string, typeof dcColors[0]>()
-    let colorIdx = 0
     const serverDcs = servers.map((s) => getDcNameByWorldName(s) || '未知')
-    for (const dc of serverDcs) {
-      if (!dcColorMap.has(dc)) {
-        dcColorMap.set(dc, dcColors[colorIdx % dcColors.length])
-        colorIdx++
-      }
-    }
-    const bgColors = servers.map((s) => dcColorMap.get(getDcNameByWorldName(s) || '未知')!.bg)
-    const borderColors = servers.map((s) => dcColorMap.get(getDcNameByWorldName(s) || '未知')!.border)
+    const bgColors = serverDcs.map((dc) => getDcColor(dc).bg)
+    const borderColors = serverDcs.map((dc) => getDcColor(dc).solid)
 
     // 计算各服务器统计量用于 tooltip
     const serverStats = new Map<string, { min: number; max: number; median: number; mean: number; count: number; dc: string }>()
@@ -201,7 +205,22 @@ function ServerListingViolin(props: { listings: any[] }) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: true,
+            position: 'top',
+            onClick: () => undefined,
+            labels: {
+              generateLabels: () => CHINA_DC_NAMES.map((name, index) => ({
+                text: name,
+                fillStyle: DC_COLORS[name].bg,
+                strokeStyle: DC_COLORS[name].solid,
+                lineWidth: 1,
+                hidden: false,
+                datasetIndex: 0,
+                index,
+              })),
+            },
+          },
           tooltip: {
             backgroundColor: '#ffffff',
             titleColor: '#0a0a0a',
@@ -266,7 +285,15 @@ function ServerListingBarChart(props: { listings: any[] }) {
 
   const serverData = createMemo(() => {
     const listings = props.listings
-    if (!listings?.length) return { data: [] as ReturnType<typeof computeStats>[], globalMax: 0 }
+    if (!listings?.length) {
+      return {
+        data: [] as ReturnType<typeof computeStats>[],
+        scaleMin: 0,
+        scaleMax: 0,
+        fullMin: 0,
+        fullMax: 0,
+      }
+    }
 
     const byServer: Record<string, any[]> = {}
     for (const l of listings) {
@@ -283,34 +310,112 @@ function ServerListingBarChart(props: { listings: any[] }) {
     })
 
     const data = servers.map((server) => computeStats(server, byServer[server], hideOutliers()))
-    const globalMax = data.length > 0 ? Math.max(...data.map((d) => d.max)) : 0
-    return { data, globalMax }
+    const maxPrice = data.length > 0 ? Math.max(...data.map((d) => d.max)) : 0
+
+    const mins = data.map((d) => d.min).filter((v) => v > 0)
+    const p75s = data.map((d) => d.p75).filter((v) => v > 0)
+    if (!mins.length || !p75s.length) return { data, scaleMin: 0, scaleMax: maxPrice, fullMin: 0, fullMax: maxPrice }
+
+    const minPrice = Math.min(...mins)
+    const focusedP75s = filterOutliers(p75s)
+    const upperPrice = Math.max(...(focusedP75s.length ? focusedP75s : p75s), minPrice)
+    const span = Math.max(upperPrice - minPrice, minPrice * 0.1, 1)
+
+    return {
+      data,
+      scaleMin: Math.max(0, minPrice - span * 0.08),
+      scaleMax: upperPrice + span * 0.12,
+      fullMin: 0,
+      fullMax: maxPrice,
+    }
   })
 
-  const dcColorMap = createMemo(() => {
-    const colors = [
-      { solid: '#22d3ee' },
-      { solid: '#a78bfa' },
-      { solid: '#fbbf24' },
-      { solid: '#34d399' },
-    ]
-    const map = new Map<string, typeof colors[0]>()
-    const data = serverData().data
-    let idx = 0
-    for (const d of data) {
-      if (!map.has(d.dc)) {
-        map.set(d.dc, colors[idx % colors.length])
-        idx++
-      }
+  const valuePct = (value: number) => {
+    const { scaleMin, scaleMax, fullMin, fullMax } = serverData()
+    const span = scaleMax - scaleMin
+    if (span <= 0) return 0
+
+    const leftFoldPct = scaleMin > fullMin ? 6 : 0
+    const rightFoldPct = fullMax > scaleMax ? 8 : 0
+    const focusStart = leftFoldPct
+    const focusEnd = 100 - rightFoldPct
+
+    if (value < scaleMin) {
+      const leftSpan = scaleMin - fullMin
+      if (leftSpan <= 0) return 0
+      return Math.min(focusStart, Math.max(0, ((value - fullMin) / leftSpan) * focusStart))
     }
-    return map
+
+    if (value > scaleMax) {
+      const rightSpan = fullMax - scaleMax
+      if (rightSpan <= 0) return 100
+      return Math.min(100, Math.max(focusEnd, focusEnd + ((value - scaleMax) / rightSpan) * rightFoldPct))
+    }
+
+    return focusStart + ((value - scaleMin) / span) * (focusEnd - focusStart)
+  }
+
+  const axisTicks = createMemo(() => {
+    const { scaleMin, scaleMax, fullMax } = serverData()
+    if (scaleMax <= scaleMin) return []
+
+    const ticks = [
+      { value: scaleMin, label: formatGil(Math.round(scaleMin)) },
+      { value: (scaleMin + scaleMax) / 2, label: formatGil(Math.round((scaleMin + scaleMax) / 2)) },
+      { value: scaleMax, label: formatGil(Math.round(scaleMax)) },
+      ...(fullMax > scaleMax ? [{ value: fullMax, label: formatGil(Math.round(fullMax)) }] : []),
+    ]
+
+    const mapped = ticks.map((tick) => ({ ...tick, label: formatAxisGil(tick.value), left: valuePct(tick.value) }))
+    return mapped.filter((tick, index) => index === 0 || Math.abs(tick.left - mapped[index - 1].left) >= 8)
   })
+
+  const Axis = (props: { position: 'top' | 'bottom' }) => (
+    <div
+      class={
+        'relative h-6 border-muted/60 ' +
+        (props.position === 'top' ? 'border-b mb-0.5' : 'border-t mt-0.5')
+      }
+      aria-hidden="true"
+    >
+      <For each={axisTicks()}>
+        {(tick) => (
+          <>
+            <div
+              class={
+                'absolute h-1.5 w-px bg-muted-foreground/35 ' +
+                (props.position === 'top' ? 'bottom-0' : 'top-0')
+              }
+              style={{ left: `${tick.left}%` }}
+            />
+            <span
+              class={
+                'absolute text-[10px] leading-none text-muted-foreground tabular-nums whitespace-nowrap ' +
+                (props.position === 'top' ? 'bottom-2' : 'top-2')
+              }
+              style={{
+                left: `${tick.left}%`,
+                transform: tick.left <= 2 ? 'translateX(0)' : tick.left >= 98 ? 'translateX(-100%)' : 'translateX(-50%)',
+              }}
+            >
+              {tick.label}
+            </span>
+          </>
+        )}
+      </For>
+    </div>
+  )
 
   return (
     <div>
       <div class="flex items-center justify-end mb-3">
         <label class="inline-flex items-center gap-2 cursor-pointer select-none">
-          <span class="text-xs text-muted-foreground">隐藏异常高价</span>
+          <span
+            class="text-xs text-muted-foreground"
+            title="从统计中移除明显偏高的挂单，影响表格数值和条形范围"
+          >
+            忽略异常高价
+          </span>
           <button
             role="switch"
             aria-checked={hideOutliers()}
@@ -338,20 +443,19 @@ function ServerListingBarChart(props: { listings: any[] }) {
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">中位价</span>
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">P25~P75</span>
         <span class="text-right whitespace-nowrap text-muted-foreground">服务器</span>
-        <div></div>
+        <Axis position="top" />
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">挂单量</span>
         <span class="text-right whitespace-nowrap text-muted-foreground">上次更新</span>
 
         {/* 数据行：display: contents 让子元素直接参与父级 grid */}
         <For each={serverData().data}>
           {(item) => {
-            const max = serverData().globalMax
-            const listingPct = max > 0 ? (item.min / max) * 100 : 0
-            const p25Pct = max > 0 ? (item.p25 / max) * 100 : 0
-            const p75Pct = max > 0 ? (item.p75 / max) * 100 : 0
-            const medianPct = max > 0 ? (item.median / max) * 100 : 0
+            const listingPct = valuePct(item.min)
+            const p25Pct = valuePct(item.p25)
+            const p75Pct = valuePct(item.p75)
+            const medianPct = valuePct(item.median)
             const rangeW = p75Pct - p25Pct
-            const color = dcColorMap().get(item.dc)
+            const color = getDcColor(item.dc)
 
             return (
               <div class="contents group cursor-pointer">
@@ -374,8 +478,8 @@ function ServerListingBarChart(props: { listings: any[] }) {
                     style={{
                       left: `${p25Pct}%`,
                       width: `${Math.max(rangeW, 0.5)}%`,
-                      background: color ? `${color.solid}33` : 'rgba(156, 163, 175, 0.2)',
-                      border: `1px solid ${color ? color.solid + '66' : 'rgba(156, 163, 175, 0.4)'}`,
+                      background: `${color.solid}33`,
+                      border: `1px solid ${color.solid}66`,
                     }}
                   />
                   {/* 最低挂单条 */}
@@ -383,7 +487,7 @@ function ServerListingBarChart(props: { listings: any[] }) {
                     class="absolute h-full rounded-l-sm"
                     style={{
                       width: `${listingPct}%`,
-                      'background-color': color ? `${color.solid}cc` : 'rgba(99, 102, 241, 0.8)',
+                      'background-color': `${color.solid}cc`,
                     }}
                   />
                   {/* 中位线 */}
@@ -405,6 +509,13 @@ function ServerListingBarChart(props: { listings: any[] }) {
             )
           }}
         </For>
+        <div></div>
+        <div></div>
+        <div></div>
+        <div></div>
+        <Axis position="bottom" />
+        <div></div>
+        <div></div>
       </div>
       </div>
     </div>
@@ -570,13 +681,6 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
     const day7Ago = now - 7 * 24 * 60 * 60 * 1000
     const filtered = data.filter(h => h.timestamp * 1000 >= day7Ago)
 
-    const dcColorValues: Record<string, string> = {
-      '陆行鸟': '#22d3ee',
-      '莫古力': '#a78bfa',
-      '猫小胖': '#fbbf24',
-      '豆豆柴': '#34d399',
-    }
-
     const allPrices = filtered.map(h => h.pricePerUnit)
     const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0
 
@@ -588,8 +692,7 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
 
     if (isMultiWorld) {
       const byDc: Record<string, any[]> = {}
-      const DC_NAMES = ['陆行鸟', '莫古力', '猫小胖', '豆豆柴']
-      for (const name of DC_NAMES) byDc[name] = []
+      for (const name of CHINA_DC_NAMES) byDc[name] = []
 
       for (const h of filtered) {
         const dc = getDcNameByWorldName(h.worldName) || ''
@@ -603,14 +706,14 @@ function ServerHistoryScatterChart(props: { history: any[] }) {
         }
       }
 
-      datasets = DC_NAMES.map(name => ({
+      datasets = CHINA_DC_NAMES.map(name => ({
         label: name,
         data: byDc[name],
         pointRadius: (ctx: any) => {
           const qty = ctx.raw?.qty ?? 1
           return Math.min(20, Math.max(6, qty * 2))
         },
-        pointBackgroundColor: (dcColorValues[name] || '#9ca3af') + '80',
+        pointBackgroundColor: getDcColor(name).point,
         pointBorderColor: 'transparent',
       }))
     } else {
