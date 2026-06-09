@@ -108,6 +108,12 @@ function formatAxisGil(v: number): string {
   return formatGil(Math.round(v))
 }
 
+function percentile(sortedValues: number[], ratio: number): number {
+  if (!sortedValues.length) return 0
+  const index = Math.floor((sortedValues.length - 1) * ratio)
+  return sortedValues[index]
+}
+
 function formatTime(ts: number): string {
   if (!ts) return '-'
   const d = new Date(ts)
@@ -121,38 +127,6 @@ function formatTime(ts: number): string {
   const diffD = Math.floor(diffH / 24)
   if (diffD < 30) return `${diffD} 天前`
   return d.toLocaleDateString('zh-CN')
-}
-
-function PriceDiff(props: { nq?: number; hq?: number; label: string }) {
-  const hasNq = createMemo(() => props.nq != null && props.nq! > 0)
-  const hasHq = createMemo(() => props.hq != null && props.hq! > 0)
-  const both = () => hasNq() && hasHq()
-  const onlyNq = () => hasNq() && !hasHq()
-
-  return (
-    <div class="flex flex-col">
-      <span class="text-xs text-muted-foreground">{props.label}</span>
-      <div class="flex flex-col leading-snug">
-        <Show when={hasNq()}>
-          <span class={(both() || onlyNq()) ? 'font-medium text-sm sm:text-base' : 'text-muted-foreground text-xs'}>
-            <Show when={both()}><span class="text-xs opacity-60 mr-1">NQ</span></Show>
-            <span class="break-all">{formatGil(props.nq!)}</span>
-            <span class="text-xs opacity-60 ml-0.5">Gil</span>
-          </span>
-        </Show>
-        <Show when={hasHq()}>
-          <span class={both() ? 'font-medium text-sm sm:text-base' : ''}>
-            <Show when={both()}><span class="text-xs opacity-60 mr-1">HQ</span></Show>
-            <span class="break-all">{formatGil(props.hq!)}</span>
-            <span class="text-xs opacity-60 ml-0.5">Gil</span>
-          </span>
-        </Show>
-        <Show when={!hasNq() && !hasHq()}>
-          <span class="text-muted-foreground">-</span>
-        </Show>
-      </div>
-    </div>
-  )
 }
 
 function ListingTableSkeleton() {
@@ -1055,18 +1029,34 @@ export default function ItemDetail() {
   const stats = createMemo(() => {
     const data = marketData()
     if (!data) return null
+    const listings = currentListings()
+    const prices = listings
+      .map((listing) => Number(listing.pricePerUnit ?? 0))
+      .filter((price) => Number.isFinite(price) && price > 0)
+      .sort((a, b) => a - b)
+    const minListing = listings
+      .filter((listing) => Number.isFinite(Number(listing.pricePerUnit)) && Number(listing.pricePerUnit) > 0)
+      .slice()
+      .sort((a, b) => {
+        const priceDiff = Number(a.pricePerUnit) - Number(b.pricePerUnit)
+        if (priceDiff !== 0) return priceDiff
+        return Number(a.total ?? 0) - Number(b.total ?? 0)
+      })[0]
+    const minListingWorld = minListing?.worldName || ''
+    const minListingDc = getDcNameByWorldName(minListingWorld) || ''
+
     return {
-      avgPriceNQ: data.currentAveragePriceNQ,
-      avgPriceHQ: data.currentAveragePriceHQ,
-      minPriceNQ: data.minPriceNQ,
-      minPriceHQ: data.minPriceHQ,
-      maxPriceNQ: data.maxPriceNQ,
-      maxPriceHQ: data.maxPriceHQ,
       velocity: data.regularSaleVelocity,
       nqVelocity: data.nqSaleVelocity,
       hqVelocity: data.hqSaleVelocity,
       lastUploadTime: data.lastUploadTime,
-      listingCount: currentListings().length,
+      listingCount: listings.length,
+      minListing,
+      minListingWorld,
+      minListingDc,
+      p25: percentile(prices, 0.25),
+      p50: percentile(prices, 0.5),
+      p75: percentile(prices, 0.75),
     }
   })
 
@@ -1244,18 +1234,61 @@ export default function ItemDetail() {
               <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 17 5 7h2l3 10" /><path d="M3.5 14h7" /><path d="M14 7h4" /><path d="M16 7v10" /></svg>
             }
           >
-            <PriceDiff nq={stats()?.minPriceNQ} hq={stats()?.minPriceHQ} label="" />
+            <Show
+              when={stats()?.minListing}
+              fallback={<span class="text-muted-foreground">-</span>}
+            >
+              {(listing) => (
+                <div class="space-y-1.5">
+                  <div class="flex items-baseline gap-1.5">
+                    <span class="text-xl font-semibold tabular-nums">
+                      {formatGil(listing().pricePerUnit)}
+                    </span>
+                    <span class="text-xs text-muted-foreground">Gil</span>
+                    <Badge variant={listing().hq ? 'default' : 'secondary'}>
+                      {listing().hq ? 'HQ' : 'NQ'}
+                    </Badge>
+                  </div>
+                  <div class="min-w-0 text-xs leading-snug text-muted-foreground">
+                    <div class="truncate" title={stats()?.minListingWorld || scope()}>
+                      {stats()?.minListingWorld || scope()}
+                    </div>
+                    <Show when={stats()?.minListingDc}>
+                      <div class="truncate" title={stats()?.minListingDc}>
+                        {stats()?.minListingDc}
+                      </div>
+                    </Show>
+                  </div>
+                </div>
+              )}
+            </Show>
           </StatCard>
           <StatCard
-            title="平均价格"
+            title="价格分布"
             icon={
               <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
             }
           >
-            <PriceDiff nq={stats()?.avgPriceNQ} hq={stats()?.avgPriceHQ} label="" />
-          </StatCard>
-          <StatCard title="最高价格">
-            <PriceDiff nq={stats()?.maxPriceNQ} hq={stats()?.maxPriceHQ} label="" />
+            <div class="grid grid-cols-3 gap-2">
+              <div class="min-w-0">
+                <div class="text-[10px] text-muted-foreground">P25</div>
+                <div class="text-sm font-medium tabular-nums truncate" title={formatGil(stats()?.p25 ?? 0)}>
+                  {stats()?.p25 ? formatAxisGil(stats()!.p25) : '-'}
+                </div>
+              </div>
+              <div class="min-w-0">
+                <div class="text-[10px] text-muted-foreground">P50</div>
+                <div class="text-sm font-semibold text-amber-500 tabular-nums truncate" title={formatGil(stats()?.p50 ?? 0)}>
+                  {stats()?.p50 ? formatAxisGil(stats()!.p50) : '-'}
+                </div>
+              </div>
+              <div class="min-w-0">
+                <div class="text-[10px] text-muted-foreground">P75</div>
+                <div class="text-sm font-medium tabular-nums truncate" title={formatGil(stats()?.p75 ?? 0)}>
+                  {stats()?.p75 ? formatAxisGil(stats()!.p75) : '-'}
+                </div>
+              </div>
+            </div>
           </StatCard>
           <StatCard title="日销量">
             <div class="flex flex-col leading-snug">
@@ -1269,7 +1302,19 @@ export default function ItemDetail() {
                 <span class="text-muted-foreground">-</span>
               </Show>
             </div>
-            <p class="text-xs text-muted-foreground mt-1">共 {stats()?.listingCount} 个挂单</p>
+          </StatCard>
+          <StatCard title="挂单概况">
+            <div class="flex flex-col leading-snug">
+              <span class="text-xl font-semibold tabular-nums">
+                {stats()?.listingCount.toLocaleString('zh-CN')}
+              </span>
+              <span class="text-xs text-muted-foreground">当前范围挂单数</span>
+              <Show when={stats()?.lastUploadTime}>
+                <span class="text-xs text-muted-foreground mt-1">
+                  更新于 {formatTime(stats()?.lastUploadTime ?? 0)}
+                </span>
+              </Show>
+            </div>
           </StatCard>
         </div>
       </Show>
