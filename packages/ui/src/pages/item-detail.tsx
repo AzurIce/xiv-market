@@ -123,6 +123,12 @@ function formatAxisGil(v: number): string {
   return formatGil(Math.round(v))
 }
 
+function formatDailySales(v: number): string {
+  if (!Number.isFinite(v) || v <= 0) return '-'
+  const digits = v >= 100 ? 0 : v >= 10 ? 1 : 2
+  return `${v.toLocaleString('zh-CN', { maximumFractionDigits: digits })}/天`
+}
+
 function percentile(sortedValues: number[], ratio: number): number {
   if (!sortedValues.length) return 0
   const index = Math.floor((sortedValues.length - 1) * ratio)
@@ -241,6 +247,67 @@ function computeStats(
     listingCount: listings.length,
     lastReviewTime,
   }
+}
+
+type SalesTrend = 'up' | 'down' | 'flat'
+
+function computeSalesVelocityByServer(history: any[]) {
+  const daySeconds = 24 * 60 * 60
+  const windowDays = 7
+  const now = Math.floor(Date.now() / 1000)
+  const recentStart = now - windowDays * daySeconds
+  const previousStart = now - windowDays * 2 * daySeconds
+  const byServer = new Map<string, { recent: number; previous: number }>()
+
+  for (const sale of history ?? []) {
+    const timestamp = Number(sale.timestamp ?? 0)
+    const quantity = Number(sale.quantity ?? 0)
+    if (!Number.isFinite(timestamp) || !Number.isFinite(quantity) || quantity <= 0) continue
+    if (timestamp < previousStart || timestamp > now) continue
+
+    const server = sale.worldName || '未知服务器'
+    const totals = byServer.get(server) ?? { recent: 0, previous: 0 }
+    if (timestamp >= recentStart) {
+      totals.recent += quantity
+    } else {
+      totals.previous += quantity
+    }
+    byServer.set(server, totals)
+  }
+
+  const result = new Map<string, { dailySales: number; previousDailySales: number; trend: SalesTrend }>()
+  for (const [server, totals] of byServer) {
+    const dailySales = totals.recent / windowDays
+    const previousDailySales = totals.previous / windowDays
+    let trend: SalesTrend = 'flat'
+    if (dailySales > previousDailySales) trend = 'up'
+    if (dailySales < previousDailySales) trend = 'down'
+    result.set(server, { dailySales, previousDailySales, trend })
+  }
+
+  return result
+}
+
+function SalesTrendIcon(props: { trend: SalesTrend }) {
+  if (props.trend === 'up') {
+    return (
+      <svg class="size-3.5 text-emerald-500 shrink-0" aria-label="销量增长" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m12 19 0-14" />
+        <path d="m5 12 7-7 7 7" />
+      </svg>
+    )
+  }
+
+  if (props.trend === 'down') {
+    return (
+      <svg class="size-3.5 text-red-500 shrink-0" aria-label="销量降低" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m12 5 0 14" />
+        <path d="m19 12-7 7-7-7" />
+      </svg>
+    )
+  }
+
+  return <span class="inline-block size-3.5 shrink-0 text-center text-muted-foreground" aria-label="销量持平">-</span>
 }
 
 function ServerListingViolin(props: { listings: any[]; scope: string }) {
@@ -395,14 +462,18 @@ function ServerListingViolin(props: { listings: any[]; scope: string }) {
   )
 }
 
-function ServerListingBarChart(props: { listings: any[]; scope: string }) {
+function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: string }) {
   const [hideOutliers, setHideOutliers] = createSignal(true)
 
   const serverData = createMemo(() => {
     const listings = props.listings
     if (!listings?.length) {
       return {
-        data: [] as ReturnType<typeof computeStats>[],
+        data: [] as (ReturnType<typeof computeStats> & {
+          dailySales: number
+          previousDailySales: number
+          salesTrend: SalesTrend
+        })[],
         scaleMin: 0,
         scaleMax: 0,
         fullMin: 0,
@@ -430,7 +501,16 @@ function ServerListingBarChart(props: { listings: any[]; scope: string }) {
       return byServer[b].length - byServer[a].length
     })
 
-    const data = servers.map((server) => computeStats(server, byServer[server], hideOutliers()))
+    const salesByServer = computeSalesVelocityByServer(props.history)
+    const data = servers.map((server) => {
+      const sales = salesByServer.get(server) ?? { dailySales: 0, previousDailySales: 0, trend: 'flat' as SalesTrend }
+      return {
+        ...computeStats(server, byServer[server], hideOutliers()),
+        dailySales: sales.dailySales,
+        previousDailySales: sales.previousDailySales,
+        salesTrend: sales.trend,
+      }
+    })
     const maxPrice = data.length > 0 ? Math.max(...data.map((d) => d.max)) : 0
 
     const mins = data.map((d) => d.min).filter((v) => v > 0)
@@ -491,6 +571,11 @@ function ServerListingBarChart(props: { listings: any[]; scope: string }) {
     return mapped.filter((tick, index) => index === 0 || Math.abs(tick.left - mapped[index - 1].left) >= 8)
   })
 
+  const legendGroups = createMemo(() => {
+    const groups = Array.from(new Set(serverData().data.map((item) => getChartGroupName(props.scope, item.server))))
+    return getChartGroupOrder(props.scope, groups)
+  })
+
   const Axis = (props: { position: 'top' | 'bottom' }) => (
     <div
       class={
@@ -529,7 +614,29 @@ function ServerListingBarChart(props: { listings: any[]; scope: string }) {
 
   return (
     <div>
-      <div class="flex items-center justify-end mb-3">
+      <div class="flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between">
+        <Show when={legendGroups().length > 0}>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" aria-label="分组颜色图例">
+            <For each={legendGroups()}>
+              {(group) => {
+                const color = getChartGroupColor(props.scope, group)
+                return (
+                  <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <span
+                      class="size-2.5 rounded-[2px] border"
+                      style={{
+                        'background-color': `${color.solid}cc`,
+                        'border-color': color.solid,
+                      }}
+                      aria-hidden="true"
+                    />
+                    <span>{group}</span>
+                  </span>
+                )
+              }}
+            </For>
+          </div>
+        </Show>
         <label class="inline-flex items-center gap-2 cursor-pointer select-none">
           <span
             class="text-xs text-muted-foreground"
@@ -558,7 +665,7 @@ function ServerListingBarChart(props: { listings: any[]; scope: string }) {
 
       {/* 统一 grid：表头和数据在同一个 grid 中，列宽全局一致 */}
       <div class="overflow-x-auto -mx-4 px-4 sm:-mx-6 sm:px-6">
-        <div class="grid grid-cols-[minmax(4.5rem,auto)_minmax(4.5rem,auto)_minmax(5.5rem,auto)_minmax(3.5rem,auto)_minmax(12rem,1fr)_minmax(3.5rem,auto)_minmax(5rem,auto)] gap-x-2 sm:gap-x-3 gap-y-1 text-xs px-0.5 min-w-[700px]">
+        <div class="grid grid-cols-[minmax(4.5rem,auto)_minmax(4.5rem,auto)_minmax(5.5rem,auto)_minmax(3.5rem,auto)_minmax(12rem,1fr)_minmax(3.5rem,auto)_minmax(5.5rem,auto)_minmax(5rem,auto)] gap-x-2 sm:gap-x-3 gap-y-1 text-xs px-0.5 min-w-[790px]">
         {/* 表头 */}
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">最低价</span>
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">中位价</span>
@@ -566,6 +673,7 @@ function ServerListingBarChart(props: { listings: any[]; scope: string }) {
         <span class="text-right whitespace-nowrap text-muted-foreground">服务器</span>
         <Axis position="top" />
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">挂单量</span>
+        <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">日均销量</span>
         <span class="text-right whitespace-nowrap text-muted-foreground">上次更新</span>
 
         {/* 数据行：display: contents 让子元素直接参与父级 grid */}
@@ -623,6 +731,13 @@ function ServerListingBarChart(props: { listings: any[]; scope: string }) {
                 <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5">
                   {item.listingCount.toLocaleString('zh-CN')}
                 </span>
+                <span
+                  class="inline-flex items-center justify-end gap-1 text-right tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5"
+                  title={`最近 7 天 ${formatDailySales(item.dailySales)}，前 7 天 ${formatDailySales(item.previousDailySales)}`}
+                >
+                  <span>{formatDailySales(item.dailySales)}</span>
+                  <SalesTrendIcon trend={item.salesTrend} />
+                </span>
                 <span class="text-right whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5" title={item.lastReviewTime ? new Date(item.lastReviewTime).toLocaleString('zh-CN') : undefined}>
                   {formatTime(item.lastReviewTime)}
                 </span>
@@ -635,6 +750,7 @@ function ServerListingBarChart(props: { listings: any[]; scope: string }) {
         <div></div>
         <div></div>
         <Axis position="bottom" />
+        <div></div>
         <div></div>
         <div></div>
       </div>
@@ -1376,7 +1492,7 @@ export default function ItemDetail() {
                   <TabsTrigger value="violin">小提琴图</TabsTrigger>
                 </TabsList>
                 <TabsContent value="bar">
-                  <ServerListingBarChart listings={currentListings()} scope={scope()} />
+                  <ServerListingBarChart listings={currentListings()} history={history()} scope={scope()} />
                 </TabsContent>
                 <TabsContent value="violin">
                   <ServerListingViolin listings={currentListings()} scope={scope()} />
