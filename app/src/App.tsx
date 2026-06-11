@@ -1,13 +1,10 @@
 import { HashRouter, Route } from '@solidjs/router'
 import { lazy } from 'solid-js'
-import { loadItems } from '@xiv-market/shared'
 
-const Navbar = lazy(() => import('@xiv-market/ui').then(m => ({ default: m.Navbar })))
-const HomePage = lazy(() => import('@xiv-market/ui').then(m => ({ default: m.HomePage })))
-const ItemDetailPage = lazy(() => import('@xiv-market/ui').then(m => ({ default: m.ItemDetailPage })))
-const SettingsPage = lazy(() => import('@xiv-market/ui').then(m => ({ default: m.SettingsPage })))
-
-loadItems()
+const Navbar = lazy(() => import('@xiv-market/ui/navbar').then(m => ({ default: m.Navbar })))
+const HomePage = lazy(() => import('@xiv-market/ui/pages/home'))
+const ItemDetailPage = lazy(() => import('@xiv-market/ui/pages/item-detail'))
+const SettingsPage = lazy(() => import('@xiv-market/ui/pages/settings'))
 
 function Layout(props: { children?: any }) {
   return (

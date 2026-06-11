@@ -36,7 +36,7 @@ XIV Market 使用 [Universalis](https://universalis.app) 公开 API 直接查询
 
 物品中文名和图标 ID 来自 [thewakingsands/ffxiv-datamining-cn](https://github.com/thewakingsands/ffxiv-datamining-cn) 的 `Item.csv`。
 
-构建时通过 `bun run update-items` 自动下载并生成 `items.json`。
+构建时通过 `bun run update-items` 自动下载并生成可读的 `items.json`。
 
 ## 开发
 

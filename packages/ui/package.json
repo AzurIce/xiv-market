@@ -5,6 +5,28 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./navbar": {
+      "types": "./src/layout/navbar.tsx",
+      "default": "./src/layout/navbar.tsx"
+    },
+    "./pages/home": {
+      "types": "./src/pages/home.tsx",
+      "default": "./src/pages/home.tsx"
+    },
+    "./pages/item-detail": {
+      "types": "./src/pages/item-detail.tsx",
+      "default": "./src/pages/item-detail.tsx"
+    },
+    "./pages/settings": {
+      "types": "./src/pages/settings.tsx",
+      "default": "./src/pages/settings.tsx"
+    }
+  },
   "dependencies": {
     "@kobalte/core": "^0.13.11",
     "@sgratzl/chartjs-chart-boxplot": "^4.4.5",

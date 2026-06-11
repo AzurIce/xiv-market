@@ -1,3 +1,6 @@
+import { createSignal } from 'solid-js'
+import { baseUrl } from './utils'
+
 export interface ItemInfo {
   name: string
   icon: number
@@ -12,28 +15,53 @@ export interface ItemsVersionInfo {
 declare const __BUILD_COMMIT__: string
 declare const __BUILD_DATE__: string
 
-import { baseUrl } from './utils'
+type LegacyItemsPayload = Record<string, ItemInfo>
 
-let itemsCache: Record<string, ItemInfo> | null = null
+let itemsCache = new Map<number, ItemInfo>()
+let itemsLoaded = false
+let itemCount = 0
 let loadPromise: Promise<void> | null = null
+const [itemsRevision, setItemsRevision] = createSignal(0)
+
+function trackItems() {
+  itemsRevision()
+}
 
 async function fetchItems() {
-  const res = await fetch(`${baseUrl()}items.json?v=${__BUILD_COMMIT__}`)
-  if (!res.ok) throw new Error(`${baseUrl()}items.json ${res.status}`)
-  return res.json() as Promise<Record<string, ItemInfo>>
+  const url = `${baseUrl()}items.json?v=${__BUILD_COMMIT__}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${url} ${res.status}`)
+  return res.json() as Promise<LegacyItemsPayload>
+}
+
+function normalizeItems(payload: LegacyItemsPayload): Map<number, ItemInfo> {
+  const map = new Map<number, ItemInfo>()
+
+  for (const [id, info] of Object.entries(payload)) {
+    const itemId = Number(id)
+    if (itemId && info?.name) {
+      map.set(itemId, { name: info.name, icon: Number(info.icon ?? 0) })
+    }
+  }
+  return map
 }
 
 export async function loadItems(): Promise<void> {
-  if (itemsCache !== null) return
+  if (itemsLoaded) return
   if (loadPromise) return loadPromise
 
   loadPromise = (async () => {
     try {
-      itemsCache = await fetchItems()
-      console.log('[Items] Loaded %d items (commit: %s)', Object.keys(itemsCache!).length, __BUILD_COMMIT__)
+      itemsCache = normalizeItems(await fetchItems())
+      itemCount = itemsCache.size
+      console.log('[Items] Loaded %d items (commit: %s)', itemCount, __BUILD_COMMIT__)
     } catch (err) {
       console.error('[Items] Failed to load: %s', err instanceof Error ? err.message : err)
-      itemsCache = {}
+      itemsCache = new Map()
+      itemCount = 0
+    } finally {
+      itemsLoaded = true
+      setItemsRevision((version) => version + 1)
     }
   })().finally(() => { loadPromise = null })
 
@@ -41,21 +69,23 @@ export async function loadItems(): Promise<void> {
 }
 
 export function getItemsVersionInfo(): ItemsVersionInfo | null {
-  if (!itemsCache) return null
+  trackItems()
+  if (!itemsLoaded) return null
   return {
     commit: __BUILD_COMMIT__,
     date: __BUILD_DATE__,
-    itemCount: Object.keys(itemsCache).length,
+    itemCount,
   }
 }
 
 export function getItemInfo(itemId: number): ItemInfo | null {
-  return itemsCache?.[String(itemId)] ?? null
+  trackItems()
+  return itemsCache.get(itemId) ?? null
 }
 
 export function getItemName(itemId: number): string {
-  if (!itemsCache) return `物品 #${itemId}`
-  return itemsCache[String(itemId)]?.name ?? `物品 #${itemId}`
+  trackItems()
+  return itemsCache.get(itemId)?.name ?? `物品 #${itemId}`
 }
 
 export function getIconUrl(iconId: number): string[] {
@@ -82,5 +112,6 @@ export function getItemIconUrl(itemId: number): string[] {
 }
 
 export function isItemsLoaded(): boolean {
-  return itemsCache !== null
+  trackItems()
+  return itemsLoaded
 }

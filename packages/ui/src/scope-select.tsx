@@ -1,4 +1,5 @@
-import { dataCenters, worlds } from "@xiv-market/shared"
+import { createMemo } from "solid-js"
+import { dataCenters, getWorldName } from "@xiv-market/shared"
 import { Select, SelectValue, SelectTrigger, SelectPortal, SelectContent, SelectItem } from "./select"
 
 export function ScopeSelect(props: {
@@ -7,19 +8,19 @@ export function ScopeSelect(props: {
   region: string
   class?: string
 }) {
-  const regionDataCenters = () => dataCenters.filter((dc) => dc.region === props.region)
+  const regionDataCenters = createMemo(() => dataCenters.filter((dc) => dc.region === props.region))
 
-  const options = () => {
+  const options = createMemo(() => {
     const opts = [props.region]
     for (const dc of regionDataCenters()) {
       opts.push(dc.name)
       for (const worldId of dc.worlds) {
-        const world = worlds.find((w) => w.id === worldId)
-        if (world) opts.push(world.name)
+        const worldName = getWorldName(worldId)
+        if (worldName) opts.push(worldName)
       }
     }
     return opts
-  }
+  })
 
   const getLabel = (value: string) => {
     if (value === props.region) return `${value}（全部）`

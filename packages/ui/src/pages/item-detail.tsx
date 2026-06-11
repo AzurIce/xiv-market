@@ -1,8 +1,6 @@
 import { createResource, createMemo, createSignal, createEffect, Show, Suspense, For, on, onMount, onCleanup } from 'solid-js'
 import { useParams, A, useSearchParams } from '@solidjs/router'
-import Chart from 'chart.js/auto'
-import { ViolinController, Violin } from '@sgratzl/chartjs-chart-boxplot'
-import { fetchMarketData, fetchHistoryData, selectedRegion, dataCenters, worlds, getItemName, getItemIconUrl, getDcNameByWorldName, baseUrl } from '@xiv-market/shared'
+import { fetchMarketData, fetchHistoryData, selectedRegion, dataCenters, worlds, getItemName, getItemIconUrl, getDcNameByWorldName, getWorldName, baseUrl } from '@xiv-market/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
 import { Badge } from '../badge'
 import { Skeleton } from '../skeleton'
@@ -12,7 +10,24 @@ import { StatCard } from '../stat-card'
 import { EmptyState } from '../empty-state'
 import { ScopeSelect } from '../scope-select'
 
-Chart.register(ViolinController, Violin)
+type ChartConstructor = typeof import('chart.js/auto').default
+
+let chartPromise: Promise<ChartConstructor> | null = null
+let violinPluginPromise: Promise<void> | null = null
+
+async function loadChart(registerViolin = false): Promise<ChartConstructor> {
+  chartPromise ??= import('chart.js/auto').then((mod) => mod.default)
+  const Chart = await chartPromise
+
+  if (registerViolin) {
+    violinPluginPromise ??= import('@sgratzl/chartjs-chart-boxplot').then((mod) => {
+      Chart.register(mod.ViolinController, mod.Violin)
+    })
+    await violinPluginPromise
+  }
+
+  return Chart
+}
 
 const CHINA_DC_NAMES = ['陆行鸟', '莫古力', '猫小胖', '豆豆柴'] as const
 type ChinaDcName = typeof CHINA_DC_NAMES[number]
@@ -53,7 +68,7 @@ function getWorldNamesInDc(dcName: string): string[] {
   const dc = dataCenters.find((d) => d.name === dcName)
   if (!dc) return []
   return dc.worlds
-    .map((worldId) => worlds.find((world) => world.id === worldId)?.name)
+    .map((worldId) => getWorldName(worldId))
     .filter((name): name is string => Boolean(name))
 }
 
@@ -232,135 +247,145 @@ function ServerListingViolin(props: { listings: any[]; scope: string }) {
   let canvasRef!: HTMLCanvasElement
 
   createEffect(() => {
-    if (!canvasRef) return
+    const listings = props.listings
+    const scope = props.scope
+    if (!canvasRef || !listings?.length) return
 
-    const existing = Chart.getChart(canvasRef)
-    if (existing) existing.destroy()
-
-    if (!props.listings?.length) return
-
-    const ctx = canvasRef.getContext('2d')
-    if (!ctx) return
-
-    const byServer: Record<string, number[]> = {}
-    for (const l of props.listings) {
-      const name = l.worldName || '未知服务器'
-      if (!byServer[name]) byServer[name] = []
-      byServer[name].push(l.pricePerUnit)
-    }
-
-    const servers = Object.keys(byServer).sort((a, b) => {
-      const dcA = getDcNameByWorldName(a) || '未知'
-      const dcB = getDcNameByWorldName(b) || '未知'
-      if (dcA !== dcB) return dcA.localeCompare(dcB)
-      return byServer[b].length - byServer[a].length
+    let chart: { destroy: () => void } | undefined
+    let disposed = false
+    onCleanup(() => {
+      disposed = true
+      chart?.destroy()
     })
-    const filteredData = servers.map((s) => filterOutliers(byServer[s]))
 
-    const serverDcs = servers.map((s) => getDcNameByWorldName(s) || '未知')
-    const serverGroups = servers.map((server) => getChartGroupName(props.scope, server))
-    const legendGroups = getChartGroupOrder(props.scope, Array.from(new Set(serverGroups)))
-    const bgColors = serverGroups.map((group) => getChartGroupColor(props.scope, group).bg)
-    const borderColors = serverGroups.map((group) => getChartGroupColor(props.scope, group).solid)
+    void loadChart(true).then((Chart) => {
+      if (disposed || !canvasRef) return
 
-    // 计算各服务器统计量用于 tooltip
-    const serverStats = new Map<string, { min: number; max: number; median: number; mean: number; count: number; dc: string }>()
-    for (let i = 0; i < servers.length; i++) {
-      const arr = filteredData[i]
-      if (!arr.length) continue
-      const sorted = [...arr].sort((a, b) => a - b)
-      const min = sorted[0]
-      const max = sorted[sorted.length - 1]
-      const mid = Math.floor(sorted.length / 2)
-      const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
-      const mean = arr.reduce((a, b) => a + b, 0) / arr.length
-      serverStats.set(servers[i], { min, max, median, mean, count: arr.length, dc: serverDcs[i] })
-    }
+      const existing = Chart.getChart(canvasRef)
+      if (existing) existing.destroy()
 
-    const chart = new Chart(ctx, {
-      type: 'violin' as any,
-      data: {
-        labels: servers,
-        datasets: [
-          {
-            label: '挂单价格分布',
-            data: filteredData as any,
-            backgroundColor: bgColors,
-            borderColor: borderColors,
-            borderWidth: 1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: getScopeKind(props.scope) !== 'world',
-            position: 'top',
-            onClick: () => undefined,
-            labels: {
-              generateLabels: () => legendGroups.map((name, index) => ({
-                text: name,
-                fillStyle: getChartGroupColor(props.scope, name).bg,
-                strokeStyle: getChartGroupColor(props.scope, name).solid,
-                lineWidth: 1,
-                hidden: false,
-                datasetIndex: 0,
-                index,
-              })),
+      const ctx = canvasRef.getContext('2d')
+      if (!ctx) return
+
+      const byServer: Record<string, number[]> = {}
+      for (const l of listings) {
+        const name = l.worldName || '未知服务器'
+        if (!byServer[name]) byServer[name] = []
+        byServer[name].push(l.pricePerUnit)
+      }
+
+      const servers = Object.keys(byServer).sort((a, b) => {
+        const dcA = getDcNameByWorldName(a) || '未知'
+        const dcB = getDcNameByWorldName(b) || '未知'
+        if (dcA !== dcB) return dcA.localeCompare(dcB)
+        return byServer[b].length - byServer[a].length
+      })
+      const filteredData = servers.map((s) => filterOutliers(byServer[s]))
+
+      const serverDcs = servers.map((s) => getDcNameByWorldName(s) || '未知')
+      const serverGroups = servers.map((server) => getChartGroupName(scope, server))
+      const legendGroups = getChartGroupOrder(scope, Array.from(new Set(serverGroups)))
+      const bgColors = serverGroups.map((group) => getChartGroupColor(scope, group).bg)
+      const borderColors = serverGroups.map((group) => getChartGroupColor(scope, group).solid)
+
+      const serverStats = new Map<string, { min: number; max: number; median: number; mean: number; count: number; dc: string }>()
+      for (let i = 0; i < servers.length; i++) {
+        const arr = filteredData[i]
+        if (!arr.length) continue
+        const sorted = [...arr].sort((a, b) => a - b)
+        const min = sorted[0]
+        const max = sorted[sorted.length - 1]
+        const mid = Math.floor(sorted.length / 2)
+        const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+        const mean = arr.reduce((a, b) => a + b, 0) / arr.length
+        serverStats.set(servers[i], { min, max, median, mean, count: arr.length, dc: serverDcs[i] })
+      }
+
+      chart = new Chart(ctx, {
+        type: 'violin' as any,
+        data: {
+          labels: servers,
+          datasets: [
+            {
+              label: '挂单价格分布',
+              data: filteredData as any,
+              backgroundColor: bgColors,
+              borderColor: borderColors,
+              borderWidth: 1,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: getScopeKind(scope) !== 'world',
+              position: 'top',
+              onClick: () => undefined,
+              labels: {
+                generateLabels: () => legendGroups.map((name, index) => ({
+                  text: name,
+                  fillStyle: getChartGroupColor(scope, name).bg,
+                  strokeStyle: getChartGroupColor(scope, name).solid,
+                  lineWidth: 1,
+                  hidden: false,
+                  datasetIndex: 0,
+                  index,
+                })),
+              },
+            },
+            tooltip: {
+              backgroundColor: '#ffffff',
+              titleColor: '#0a0a0a',
+              bodyColor: '#0a0a0a',
+              borderColor: '#e5e5e5',
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                title: (items: any[]) => items[0]?.label || '',
+                label: () => '',
+                afterBody: (items: any[]) => {
+                  const server = items[0]?.label
+                  if (!server) return []
+                  const s = serverStats.get(server)
+                  if (!s) return []
+                  const fmt = (n: number) => n.toLocaleString('zh-CN')
+                  return [
+                    `大区: ${s.dc}`,
+                    `样本数: ${s.count}`,
+                    `最低: ${fmt(s.min)} Gil`,
+                    `中位数: ${fmt(s.median)} Gil`,
+                    `平均: ${fmt(Math.round(s.mean))} Gil`,
+                    `最高: ${fmt(s.max)} Gil`,
+                  ]
+                },
+              },
             },
           },
-          tooltip: {
-            backgroundColor: '#ffffff',
-            titleColor: '#0a0a0a',
-            bodyColor: '#0a0a0a',
-            borderColor: '#e5e5e5',
-            borderWidth: 1,
-            padding: 10,
-            callbacks: {
-              title: (items: any[]) => items[0]?.label || '',
-              label: () => '',
-              afterBody: (items: any[]) => {
-                const server = items[0]?.label
-                if (!server) return []
-                const s = serverStats.get(server)
-                if (!s) return []
-                const fmt = (n: number) => n.toLocaleString('zh-CN')
-                return [
-                  `大区: ${s.dc}`,
-                  `样本数: ${s.count}`,
-                  `最低: ${fmt(s.min)} Gil`,
-                  `中位数: ${fmt(s.median)} Gil`,
-                  `平均: ${fmt(Math.round(s.mean))} Gil`,
-                  `最高: ${fmt(s.max)} Gil`,
-                ]
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { maxRotation: 45, minRotation: 0 },
+            },
+            y: {
+              type: 'logarithmic',
+              grid: { color: 'rgba(0,0,0,0.05)' },
+              ticks: {
+                callback: (v: any) => {
+                  if (typeof v !== 'number') return v
+                  if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`
+                  if (v >= 1000) return `${(v / 1000).toFixed(0)}k`
+                  return v.toLocaleString('zh-CN')
+                },
               },
             },
           },
         },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: { maxRotation: 45, minRotation: 0 },
-          },
-          y: {
-            type: 'logarithmic',
-            grid: { color: 'rgba(0,0,0,0.05)' },
-            ticks: {
-              callback: (v: any) => {
-                if (typeof v !== 'number') return v
-                if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`
-                if (v >= 1000) return `${(v / 1000).toFixed(0)}k`
-                return v.toLocaleString('zh-CN')
-              },
-            },
-          },
-        },
-      },
-    })
+      })
 
-    return () => chart.destroy()
+      if (disposed) chart.destroy()
+    })
   })
 
   return (
@@ -623,132 +648,140 @@ function ServerHistoryTrendChart(props: { history: any[] }) {
 
   createEffect(() => {
     const data = props.history
-    if (!canvasRef) return
+    if (!canvasRef || !data?.length) return
 
-    // 销毁可能存在的旧图表
-    const existing = Chart.getChart(canvasRef)
-    if (existing) existing.destroy()
-
-    if (!data?.length) return
-    const ctx = canvasRef.getContext('2d')
-    if (!ctx) return
-
-    // 日级聚合（使用本地时间）
-    const byDay: Record<string, { prices: number[]; volume: number }> = {}
-    for (const h of props.history) {
-      const d = new Date(h.timestamp * 1000)
-      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      if (!byDay[day]) byDay[day] = { prices: [], volume: 0 }
-      byDay[day].prices.push(h.pricePerUnit)
-      byDay[day].volume += h.quantity
-    }
-
-    const days = Object.keys(byDay).sort()
-    const dayLabels = days.map(d => {
-      const [, m, day] = d.split('-')
-      return `${Number(m)}/${Number(day)}`
+    let chart: { destroy: () => void } | undefined
+    let disposed = false
+    onCleanup(() => {
+      disposed = true
+      chart?.destroy()
     })
-    const avgPrices = days.map(d => {
-      const arr = byDay[d].prices
-      return arr.reduce((a, b) => a + b, 0) / arr.length
-    })
-    const minPrices = days.map(d => Math.min(...byDay[d].prices))
-    const maxPrices = days.map(d => Math.max(...byDay[d].prices))
-    const volumes = days.map(d => byDay[d].volume)
 
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: dayLabels,
-        datasets: [
-          {
-            label: '成交量',
-            type: 'bar' as any,
-            data: volumes,
-            yAxisID: 'y1',
-            barMaxWidth: 12,
-            backgroundColor: 'rgba(74, 222, 128, 0.4)',
-          },
-          {
-            label: '均价',
-            data: avgPrices,
-            borderColor: '#6366f1',
-            backgroundColor: '#6366f1',
-            borderWidth: 2,
-            tension: 0.3,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-          },
-          {
-            label: '最低',
-            data: minPrices,
-            borderColor: 'transparent',
-            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-            fill: '+1',
-            pointRadius: 0,
-            tension: 0.3,
-          },
-          {
-            label: '最高',
-            data: maxPrices,
-            borderColor: 'transparent',
-            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-            fill: false,
-            pointRadius: 0,
-            tension: 0.3,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { intersect: false, mode: 'index' },
-        plugins: {
-          legend: { display: true, position: 'top' },
-          tooltip: {
-            backgroundColor: '#ffffff',
-            titleColor: '#0a0a0a',
-            bodyColor: '#0a0a0a',
-            borderColor: '#e5e5e5',
-            borderWidth: 1,
-            padding: 10,
-            callbacks: {
-              label: (item: any) => {
-                const v = item.parsed?.y
-                if (v == null) return ''
-                return `${item.dataset.label}: ${v.toLocaleString('zh-CN')}${item.datasetIndex === 0 ? '' : ' Gil'}`
+    void loadChart().then((Chart) => {
+      if (disposed || !canvasRef) return
+
+      const existing = Chart.getChart(canvasRef)
+      if (existing) existing.destroy()
+
+      const ctx = canvasRef.getContext('2d')
+      if (!ctx) return
+
+      const byDay: Record<string, { prices: number[]; volume: number }> = {}
+      for (const h of data) {
+        const d = new Date(h.timestamp * 1000)
+        const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        if (!byDay[day]) byDay[day] = { prices: [], volume: 0 }
+        byDay[day].prices.push(h.pricePerUnit)
+        byDay[day].volume += h.quantity
+      }
+
+      const days = Object.keys(byDay).sort()
+      const dayLabels = days.map(d => {
+        const [, m, day] = d.split('-')
+        return `${Number(m)}/${Number(day)}`
+      })
+      const avgPrices = days.map(d => {
+        const arr = byDay[d].prices
+        return arr.reduce((a, b) => a + b, 0) / arr.length
+      })
+      const minPrices = days.map(d => Math.min(...byDay[d].prices))
+      const maxPrices = days.map(d => Math.max(...byDay[d].prices))
+      const volumes = days.map(d => byDay[d].volume)
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: dayLabels,
+          datasets: [
+            {
+              label: '成交量',
+              type: 'bar' as any,
+              data: volumes,
+              yAxisID: 'y1',
+              barMaxWidth: 12,
+              backgroundColor: 'rgba(74, 222, 128, 0.4)',
+            },
+            {
+              label: '均价',
+              data: avgPrices,
+              borderColor: '#6366f1',
+              backgroundColor: '#6366f1',
+              borderWidth: 2,
+              tension: 0.3,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+            },
+            {
+              label: '最低',
+              data: minPrices,
+              borderColor: 'transparent',
+              backgroundColor: 'rgba(99, 102, 241, 0.1)',
+              fill: '+1',
+              pointRadius: 0,
+              tension: 0.3,
+            },
+            {
+              label: '最高',
+              data: maxPrices,
+              borderColor: 'transparent',
+              backgroundColor: 'rgba(99, 102, 241, 0.1)',
+              fill: false,
+              pointRadius: 0,
+              tension: 0.3,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' },
+          plugins: {
+            legend: { display: true, position: 'top' },
+            tooltip: {
+              backgroundColor: '#ffffff',
+              titleColor: '#0a0a0a',
+              bodyColor: '#0a0a0a',
+              borderColor: '#e5e5e5',
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                label: (item: any) => {
+                  const v = item.parsed?.y
+                  if (v == null) return ''
+                  return `${item.dataset.label}: ${v.toLocaleString('zh-CN')}${item.datasetIndex === 0 ? '' : ' Gil'}`
+                },
               },
             },
           },
-        },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: { maxTicksLimit: 8 },
-          },
-          y: {
-            type: 'logarithmic',
-            grid: { color: 'rgba(0,0,0,0.05)' },
-            ticks: {
-              callback: (v: any) => {
-                if (typeof v !== 'number') return v
-                if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`
-                if (v >= 1000) return `${(v / 1000).toFixed(0)}k`
-                return v.toLocaleString('zh-CN')
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { maxTicksLimit: 8 },
+            },
+            y: {
+              type: 'logarithmic',
+              grid: { color: 'rgba(0,0,0,0.05)' },
+              ticks: {
+                callback: (v: any) => {
+                  if (typeof v !== 'number') return v
+                  if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`
+                  if (v >= 1000) return `${(v / 1000).toFixed(0)}k`
+                  return v.toLocaleString('zh-CN')
+                },
               },
             },
-          },
-          y1: {
-            type: 'linear',
-            position: 'right',
-            grid: { display: false },
-            display: true,
+            y1: {
+              type: 'linear',
+              position: 'right',
+              grid: { display: false },
+              display: true,
+            },
           },
         },
-      },
-    })
+      })
 
-    return () => chart.destroy()
+      if (disposed) chart.destroy()
+    })
   })
 
   return (
@@ -763,131 +796,141 @@ function ServerHistoryScatterChart(props: { history: any[]; scope: string }) {
 
   createEffect(() => {
     const data = props.history
-    if (!canvasRef) return
+    const scope = props.scope
+    if (!canvasRef || !data?.length) return
 
-    // 销毁可能存在的旧图表
-    const existing = Chart.getChart(canvasRef)
-    if (existing) existing.destroy()
+    let chart: { destroy: () => void } | undefined
+    let disposed = false
+    onCleanup(() => {
+      disposed = true
+      chart?.destroy()
+    })
 
-    if (!data?.length) return
-    const ctx = canvasRef.getContext('2d')
-    if (!ctx) return
+    void loadChart().then((Chart) => {
+      if (disposed || !canvasRef) return
 
-    const now = Date.now()
-    const day7Ago = now - 7 * 24 * 60 * 60 * 1000
-    const filtered = data.filter(h => h.timestamp * 1000 >= day7Ago)
+      const existing = Chart.getChart(canvasRef)
+      if (existing) existing.destroy()
 
-    const allPrices = filtered.map(h => h.pricePerUnit)
-    const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0
+      const ctx = canvasRef.getContext('2d')
+      if (!ctx) return
 
-    const scopeKind = getScopeKind(props.scope)
-    const byGroup: Record<string, any[]> = {}
+      const now = Date.now()
+      const day7Ago = now - 7 * 24 * 60 * 60 * 1000
+      const filtered = data.filter(h => h.timestamp * 1000 >= day7Ago)
 
-    for (const h of filtered) {
-      const group = getChartGroupName(props.scope, h.worldName)
-      if (!byGroup[group]) byGroup[group] = []
-      byGroup[group].push({
-        x: h.timestamp * 1000,
-        y: h.pricePerUnit,
-        qty: h.quantity,
-        world: h.worldName,
-      })
-    }
+      const allPrices = filtered.map(h => h.pricePerUnit)
+      const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0
 
-    const groupNames = getChartGroupOrder(props.scope, Object.keys(byGroup))
-    const datasets = groupNames.map(name => ({
-      label: name,
-      data: byGroup[name],
-      pointRadius: (ctx: any) => {
-        const qty = ctx.raw?.qty ?? 1
-        return Math.min(20, Math.max(6, qty * 2))
-      },
-      pointBackgroundColor: getChartGroupColor(props.scope, name).point,
-      pointBorderColor: 'transparent',
-    }))
+      const scopeKind = getScopeKind(scope)
+      const byGroup: Record<string, any[]> = {}
 
-    if (scopeKind === 'world' && datasets.length === 0) {
-      datasets.push({
-        label: props.scope,
-        data: filtered.map(h => ({
+      for (const h of filtered) {
+        const group = getChartGroupName(scope, h.worldName)
+        if (!byGroup[group]) byGroup[group] = []
+        byGroup[group].push({
           x: h.timestamp * 1000,
           y: h.pricePerUnit,
           qty: h.quantity,
           world: h.worldName,
-        })),
+        })
+      }
+
+      const groupNames = getChartGroupOrder(scope, Object.keys(byGroup))
+      const datasets = groupNames.map(name => ({
+        label: name,
+        data: byGroup[name],
         pointRadius: (ctx: any) => {
           const qty = ctx.raw?.qty ?? 1
           return Math.min(20, Math.max(6, qty * 2))
         },
-        pointBackgroundColor: getChartGroupColor(props.scope, props.scope).point,
+        pointBackgroundColor: getChartGroupColor(scope, name).point,
         pointBorderColor: 'transparent',
+      }))
+
+      if (scopeKind === 'world' && datasets.length === 0) {
+        datasets.push({
+          label: scope,
+          data: filtered.map(h => ({
+            x: h.timestamp * 1000,
+            y: h.pricePerUnit,
+            qty: h.quantity,
+            world: h.worldName,
+          })),
+          pointRadius: (ctx: any) => {
+            const qty = ctx.raw?.qty ?? 1
+            return Math.min(20, Math.max(6, qty * 2))
+          },
+          pointBackgroundColor: getChartGroupColor(scope, scope).point,
+          pointBorderColor: 'transparent',
+        })
+      }
+
+      chart = new Chart(ctx, {
+        type: 'scatter',
+        data: { datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: scopeKind !== 'world', position: 'top' },
+            tooltip: {
+              backgroundColor: '#ffffff',
+              titleColor: '#0a0a0a',
+              bodyColor: '#0a0a0a',
+              borderColor: '#e5e5e5',
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                title: (items: any[]) => {
+                  const raw = items[0]?.raw
+                  if (!raw) return ''
+                  const d = new Date(raw.x)
+                  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+                },
+                label: (item: any) => {
+                  const raw = item.raw
+                  const lines: string[] = []
+                  lines.push(`单价: ${raw.y.toLocaleString('zh-CN')} Gil`)
+                  lines.push(`数量: ${raw.qty}`)
+                  if (raw.world) lines.push(`服务器: ${raw.world}`)
+                  return lines
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              min: day7Ago,
+              max: now,
+              grid: { display: false },
+              ticks: {
+                maxTicksLimit: 8,
+                callback: (v: any) => {
+                  const d = new Date(v)
+                  return `${d.getMonth() + 1}/${d.getDate()}`
+                },
+              },
+            },
+            y: {
+              min: 0,
+              max: Math.ceil(maxPrice * 1.1),
+              grid: { color: 'rgba(0,0,0,0.05)' },
+              ticks: {
+                callback: (v: any) => {
+                  if (typeof v !== 'number') return v
+                  if (v >= 10000) return `${(v / 10000).toFixed(0)}万`
+                  return v.toLocaleString('zh-CN')
+                },
+              },
+            },
+          },
+        },
       })
-    }
 
-    const chart = new Chart(ctx, {
-      type: 'scatter',
-      data: { datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: scopeKind !== 'world', position: 'top' },
-          tooltip: {
-            backgroundColor: '#ffffff',
-            titleColor: '#0a0a0a',
-            bodyColor: '#0a0a0a',
-            borderColor: '#e5e5e5',
-            borderWidth: 1,
-            padding: 10,
-            callbacks: {
-              title: (items: any[]) => {
-                const raw = items[0]?.raw
-                if (!raw) return ''
-                const d = new Date(raw.x)
-                return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
-              },
-              label: (item: any) => {
-                const raw = item.raw
-                const lines: string[] = []
-                lines.push(`单价: ${raw.y.toLocaleString('zh-CN')} Gil`)
-                lines.push(`数量: ${raw.qty}`)
-                if (raw.world) lines.push(`服务器: ${raw.world}`)
-                return lines
-              },
-            },
-          },
-        },
-        scales: {
-          x: {
-            type: 'linear',
-            min: day7Ago,
-            max: now,
-            grid: { display: false },
-            ticks: {
-              maxTicksLimit: 8,
-              callback: (v: any) => {
-                const d = new Date(v)
-                return `${d.getMonth() + 1}/${d.getDate()}`
-              },
-            },
-          },
-          y: {
-            min: 0,
-            max: Math.ceil(maxPrice * 1.1),
-            grid: { color: 'rgba(0,0,0,0.05)' },
-            ticks: {
-              callback: (v: any) => {
-                if (typeof v !== 'number') return v
-                if (v >= 10000) return `${(v / 10000).toFixed(0)}万`
-                return v.toLocaleString('zh-CN')
-              },
-            },
-          },
-        },
-      },
+      if (disposed) chart.destroy()
     })
-
-    return () => chart.destroy()
   })
 
   return (

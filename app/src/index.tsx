@@ -6,6 +6,5 @@ import App from './App'
 
 const root = document.getElementById('root')
 
-loadItems().then(() => {
-  render(() => <App />, root!)
-})
+render(() => <App />, root!)
+void loadItems()

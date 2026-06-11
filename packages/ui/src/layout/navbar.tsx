@@ -1,7 +1,8 @@
-import { createEffect, createResource, For } from 'solid-js'
+import { createEffect, createResource, createSignal, For, lazy, onMount, Show, Suspense } from 'solid-js'
 import { A } from '@solidjs/router'
-import { selectedRegion, setSelectedRegion, setDataCenters, setWorlds, availableRegions, fetchDataCenters, fetchWorlds } from '@xiv-market/shared'
-import { Select, SelectValue, SelectTrigger, SelectPortal, SelectContent, SelectItem } from '../select'
+import { selectedRegion, setDataCenters, setWorlds, fetchDataCenters, fetchWorlds } from '@xiv-market/shared'
+
+const RegionSelect = lazy(() => import('./region-select'))
 
 export function Navbar(props: {
   navItems?: { href: string; label: string; end?: boolean }[]
@@ -13,9 +14,21 @@ export function Navbar(props: {
   const isPro = () => variant() === 'pro'
 
   const badgeClass = () => 'bg-[rgba(245,158,11,0.15)] text-[#d97706] border-[rgba(245,158,11,0.25)]'
+  const [showRegionSelect, setShowRegionSelect] = createSignal(false)
 
   const [dataCentersRes] = createResource(fetchDataCenters)
   const [worldsRes] = createResource(fetchWorlds)
+
+  onMount(() => {
+    const win = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+    }
+    if (win.requestIdleCallback) {
+      win.requestIdleCallback(() => setShowRegionSelect(true), { timeout: 1000 })
+      return
+    }
+    window.setTimeout(() => setShowRegionSelect(true), 250)
+  })
 
   createEffect(() => {
     if (dataCentersRes()) setDataCenters(dataCentersRes()!)
@@ -24,12 +37,6 @@ export function Navbar(props: {
   createEffect(() => {
     if (worldsRes()) setWorlds(worldsRes()!)
   })
-
-  const regions = () => {
-    const available = availableRegions()
-    if (available.length > 0) return available
-    return ['中国', '日本', '北美', '欧洲', '大洋洲']
-  }
 
   return (
     <header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -68,21 +75,24 @@ export function Navbar(props: {
             <label for="region-select" class="text-sm text-muted-foreground hidden sm:inline">
               区域
             </label>
-            <Select<string>
-              options={regions()}
-              value={selectedRegion()}
-              onChange={(val) => setSelectedRegion(val ?? '中国')}
-              itemComponent={(props) => (
-                <SelectItem item={props.item}>{props.item.rawValue}</SelectItem>
-              )}
+            <Show
+              when={showRegionSelect()}
+              fallback={
+                <span class="inline-flex h-8 min-w-16 items-center rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs">
+                  {selectedRegion()}
+                </span>
+              }
             >
-              <SelectTrigger size="sm">
-                <SelectValue<string>>{(state) => state.selectedOption()}</SelectValue>
-              </SelectTrigger>
-              <SelectPortal>
-                <SelectContent />
-              </SelectPortal>
-            </Select>
+              <Suspense
+                fallback={
+                  <span class="inline-flex h-8 min-w-16 items-center rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs">
+                    {selectedRegion()}
+                  </span>
+                }
+              >
+                <RegionSelect />
+              </Suspense>
+            </Show>
           </div>
 
           {props.githubUrl && (

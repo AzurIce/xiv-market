@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js'
+import { createMemo, createSignal } from 'solid-js'
 import { createStore } from 'solid-js/store'
 import type { DataCenter, World } from './types'
 
@@ -15,15 +15,15 @@ export function availableRegions(): string[] {
   return Array.from(regions)
 }
 
-function getWorldMap(): Map<number, string> {
+const worldNameById = createMemo((): Map<number, string> => {
   const map = new Map<number, string>()
   for (const w of worlds) {
     map.set(w.id, w.name)
   }
   return map
-}
+})
 
-function getWorldToDcMap(): Map<number, string> {
+const worldDcById = createMemo((): Map<number, string> => {
   const map = new Map<number, string>()
   for (const dc of dataCenters) {
     for (const worldId of dc.worlds) {
@@ -31,14 +31,14 @@ function getWorldToDcMap(): Map<number, string> {
     }
   }
   return map
-}
+})
 
 export function getWorldName(worldId: number): string | null {
-  return getWorldMap().get(worldId) ?? null
+  return worldNameById().get(worldId) ?? null
 }
 
 export function getWorldDcName(worldId: number): string | null {
-  return getWorldToDcMap().get(worldId) ?? null
+  return worldDcById().get(worldId) ?? null
 }
 
 export function getWorldDisplayName(worldId: number): string {
@@ -49,8 +49,8 @@ export function getWorldDisplayName(worldId: number): string {
   return world
 }
 
-function getWorldNameToDcMap(): Map<string, string> {
-  const worldMap = getWorldMap()
+const worldDcByName = createMemo((): Map<string, string> => {
+  const worldMap = worldNameById()
   const map = new Map<string, string>()
   for (const dc of dataCenters) {
     for (const worldId of dc.worlds) {
@@ -61,17 +61,17 @@ function getWorldNameToDcMap(): Map<string, string> {
     }
   }
   return map
-}
+})
 
 export function getWorldDisplayNameByName(worldName: string): string {
   if (!worldName) return ''
-  const dc = getWorldNameToDcMap().get(worldName)
+  const dc = worldDcByName().get(worldName)
   if (dc) return `${dc}·${worldName}`
   return worldName
 }
 
 export function getDcNameByWorldName(worldName: string): string | null {
-  return getWorldNameToDcMap().get(worldName) ?? null
+  return worldDcByName().get(worldName) ?? null
 }
 
 export type DataScope = 'region' | 'dc' | 'world'
@@ -100,8 +100,9 @@ export function getAvailableScopes(): ScopeOption[] {
   }
 
   // World level
+  const worldToDc = worldDcById()
   for (const world of worlds) {
-    const dcName = getWorldToDcMap().get(world.id)
+    const dcName = worldToDc.get(world.id)
     options.push({ type: 'world', value: world.name, label: dcName ? `${dcName}·${world.name}` : world.name })
   }
 

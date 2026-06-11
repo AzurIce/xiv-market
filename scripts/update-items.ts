@@ -6,6 +6,23 @@ const COMMITS_API_URL = 'https://api.github.com/repos/thewakingsands/ffxiv-datam
 const ROOT = join(import.meta.dir, '..')
 const APPS = ['app']
 
+interface ItemRow {
+  id: number
+  name: string
+  icon: number
+}
+
+function stringifyReadableItems(items: ItemRow[]): string {
+  const lines = ['{']
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    const comma = i === items.length - 1 ? '' : ','
+    lines.push(`  ${JSON.stringify(String(item.id))}: { "name": ${JSON.stringify(item.name)}, "icon": ${item.icon} }${comma}`)
+  }
+  lines.push('}')
+  return lines.join('\n')
+}
+
 function parseCsvLine(line: string): string[] {
   const fields: string[] = []
   let cur = ''
@@ -76,17 +93,17 @@ async function main() {
   }
 
   const lines = splitCsv(csv)
-  const items: Record<number, { name: string; icon: number }> = {}
+  const items: ItemRow[] = []
   for (let i = 3; i < lines.length; i++) {
     const f = parseCsvLine(lines[i].trim())
     if (!f[0]) continue
     const id = +f[0], name = f[10], icon = +f[11]
-    if (id && name) items[id] = { name, icon: icon }
+    if (id && name) items.push({ id, name, icon })
   }
-  console.log(`Parsed ${Object.keys(items).length} items`)
+  console.log(`Parsed ${items.length} items`)
 
-  const json = JSON.stringify(items)
-  console.log(`Output: ${(json.length / 1024).toFixed(0)} KB`)
+  const readableJson = stringifyReadableItems(items)
+  console.log(`Output: ${(readableJson.length / 1024).toFixed(0)} KB`)
 
   let commit = { sha: 'unknown', date: new Date().toLocaleString('zh-CN') }
   try { commit = await fetchCommit(); console.log(`  commit: ${commit.sha} (${commit.date})`) }
@@ -95,7 +112,7 @@ async function main() {
   for (const app of APPS) {
     const out = join(ROOT, app, 'public')
     if (!existsSync(out)) mkdirSync(out, { recursive: true })
-    writeFileSync(join(out, 'items.json'), json)
+    writeFileSync(join(out, 'items.json'), readableJson)
     writeFileSync(join(out, 'version.json'), JSON.stringify({ commit: commit.sha, date: commit.date }))
     console.log(`  → ${app}/public/`)
   }
