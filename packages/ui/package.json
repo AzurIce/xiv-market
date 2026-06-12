@@ -18,6 +18,10 @@
       "types": "./src/pages/home.tsx",
       "default": "./src/pages/home.tsx"
     },
+    "./pages/materia": {
+      "types": "./src/pages/materia.tsx",
+      "default": "./src/pages/materia.tsx"
+    },
     "./pages/item-detail": {
       "types": "./src/pages/item-detail.tsx",
       "default": "./src/pages/item-detail.tsx"

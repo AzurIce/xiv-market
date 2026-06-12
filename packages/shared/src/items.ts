@@ -83,6 +83,15 @@ export function getItemInfo(itemId: number): ItemInfo | null {
   return itemsCache.get(itemId) ?? null
 }
 
+export function getAllItems(): { id: number; name: string; icon: number }[] {
+  trackItems()
+  return Array.from(itemsCache.entries()).map(([id, info]) => ({
+    id,
+    name: info.name,
+    icon: info.icon,
+  }))
+}
+
 export function getItemName(itemId: number): string {
   trackItems()
   return itemsCache.get(itemId)?.name ?? `物品 #${itemId}`
