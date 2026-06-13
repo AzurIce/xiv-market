@@ -403,7 +403,7 @@ function ListingVelocity(props: { value?: number }) {
   )
 }
 
-function MateriaMobileCard(props: { row: MateriaRow; onOpen: () => void }) {
+function MateriaMobileCard(props: { row: MateriaRow; onOpen: (e?: MouseEvent) => void }) {
   const iconUrls = () => getIconUrl(props.row.icon)
   const agg = () => props.row.agg
 
@@ -413,10 +413,11 @@ function MateriaMobileCard(props: { row: MateriaRow; onOpen: () => void }) {
       role="button"
       tabindex="0"
       onClick={props.onOpen}
+      onAuxClick={props.onOpen}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          props.onOpen()
+          props.onOpen(e as unknown as MouseEvent)
         }
       }}
     >
@@ -633,8 +634,21 @@ export default function MateriaPage() {
     updateParams({ q: value })
   }
 
-  const openItem = (itemId: number) => {
-    navigate(`/item/${itemId}`)
+  const itemPath = (itemId: number) => `/item/${itemId}`
+
+  const itemUrl = (itemId: number) => {
+    const url = new URL(window.location.href)
+    url.hash = itemPath(itemId)
+    return url.toString()
+  }
+
+  const openItem = (itemId: number, e?: MouseEvent) => {
+    if (e?.button === 1 || e?.ctrlKey || e?.metaKey) {
+      e.preventDefault()
+      window.open(itemUrl(itemId), '_blank', 'noopener')
+      return
+    }
+    navigate(itemPath(itemId))
   }
 
   return (
@@ -786,7 +800,7 @@ export default function MateriaPage() {
                         const row = entry.row
                         const iconUrls = () => getIconUrl(row.icon)
                         return (
-                          <TableRow class="cursor-pointer" onClick={() => openItem(row.id)}>
+                          <TableRow class="cursor-pointer" onClick={(e) => openItem(row.id, e)} onAuxClick={(e) => openItem(row.id, e)}>
                             <TableCell>
                               <div class="flex items-center gap-2">
                                 <Show when={iconUrls().length > 0}>
@@ -833,7 +847,7 @@ export default function MateriaPage() {
 
               <div class="space-y-2 sm:hidden">
                 <For each={currentRows()}>
-                  {(row) => <MateriaMobileCard row={row} onOpen={() => openItem(row.id)} />}
+                  {(row) => <MateriaMobileCard row={row} onOpen={(e) => openItem(row.id, e)} />}
                 </For>
               </div>
             </Show>
