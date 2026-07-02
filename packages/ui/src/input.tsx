@@ -7,6 +7,8 @@ export function Input(props: {
   value?: string
   onInput?: (e: InputEvent & { currentTarget: HTMLInputElement }) => void
   onChange?: (e: Event & { currentTarget: HTMLInputElement }) => void
+  onCompositionStart?: (e: CompositionEvent & { currentTarget: HTMLInputElement }) => void
+  onCompositionEnd?: (e: CompositionEvent & { currentTarget: HTMLInputElement }) => void
 }) {
   return (
     <input
@@ -19,6 +21,8 @@ export function Input(props: {
       value={props.value}
       onInput={props.onInput}
       onChange={props.onChange}
+      onCompositionStart={props.onCompositionStart}
+      onCompositionEnd={props.onCompositionEnd}
     />
   )
 }

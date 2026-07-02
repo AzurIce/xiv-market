@@ -180,10 +180,12 @@ export default function Home() {
   const [searchParams, setSearchParams] = useSearchParams()
   const initialSearchQuery = typeof searchParams.q === 'string' ? searchParams.q : ''
   const [searchQuery, setSearchQuery] = createSignal(initialSearchQuery)
+  const [isComposing, setIsComposing] = createSignal(false)
   const [page, setPage] = createSignal(1)
   const PAGE_SIZE = 50
 
   createEffect(() => {
+    if (isComposing()) return
     const q = typeof searchParams.q === 'string' ? searchParams.q : ''
     if (q !== searchQuery()) {
       setSearchQuery(q)
@@ -236,6 +238,16 @@ export default function Home() {
     setSearchParams(value ? { q: value } : { q: undefined }, { replace: true })
   }
 
+  const handleInput = (e: InputEvent & { currentTarget: HTMLInputElement }) => {
+    if (isComposing()) return
+    setSearch(e.currentTarget.value)
+  }
+
+  const handleCompositionEnd = (e: CompositionEvent & { currentTarget: HTMLInputElement }) => {
+    setIsComposing(false)
+    setSearch(e.currentTarget.value)
+  }
+
   const itemPath = (itemId: number) => {
     const q = searchQuery().trim()
     return q ? `/item/${itemId}?q=${encodeURIComponent(q)}` : `/item/${itemId}`
@@ -273,7 +285,9 @@ export default function Home() {
               type="text"
               placeholder="搜索物品名称或 ID..."
               value={searchQuery()}
-              onInput={(e) => setSearch(e.currentTarget.value)}
+              onInput={handleInput}
+              onCompositionStart={() => setIsComposing(true)}
+              onCompositionEnd={handleCompositionEnd}
               class="pl-10 pr-16"
             />
             <Show when={searchQuery()}>
