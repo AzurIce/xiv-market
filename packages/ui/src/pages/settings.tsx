@@ -6,7 +6,7 @@ import { Badge } from '../badge'
 import { PageHeader } from '../page-header'
 import { Separator } from '../separator'
 
-declare const __BUILD_COMMIT__: string
+declare const __GIT_COMMIT__: string
 declare const __BUILD_DATE__: string
 
 export default function Settings() {
@@ -38,12 +38,12 @@ export default function Settings() {
                 <p class="text-sm text-muted-foreground mb-1">构建 Commit</p>
                 <p class="font-mono text-sm">
                   <a
-                    href={`https://github.com/AzurIce/xiv-market/commit/${__BUILD_COMMIT__}`}
+                    href={`https://github.com/AzurIce/xiv-market/commit/${__GIT_COMMIT__}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="text-primary hover:underline"
                   >
-                    {__BUILD_COMMIT__}
+                    {__GIT_COMMIT__}
                   </a>
                 </p>
               </div>
