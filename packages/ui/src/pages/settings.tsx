@@ -6,6 +6,9 @@ import { Badge } from '../badge'
 import { PageHeader } from '../page-header'
 import { Separator } from '../separator'
 
+declare const __BUILD_COMMIT__: string
+declare const __BUILD_DATE__: string
+
 export default function Settings() {
   const versionInfo = (): ItemsVersionInfo | null => getItemsVersionInfo()
 
@@ -20,10 +23,38 @@ export default function Settings() {
 
       <PageHeader
         title="设置"
-        description="物品数据版本信息"
+        description="网站与数据版本信息"
       />
 
       <div class="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>网站版本</CardTitle>
+            <CardDescription>当前部署的构建版本信息</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <p class="text-sm text-muted-foreground mb-1">构建 Commit</p>
+                <p class="font-mono text-sm">
+                  <a
+                    href={`https://github.com/AzurIce/xiv-market/commit/${__BUILD_COMMIT__}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-primary hover:underline"
+                  >
+                    {__BUILD_COMMIT__}
+                  </a>
+                </p>
+              </div>
+              <div>
+                <p class="text-sm text-muted-foreground mb-1">构建日期</p>
+                <p class="text-sm font-medium">{__BUILD_DATE__ || '-'}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>物品数据版本</CardTitle>
