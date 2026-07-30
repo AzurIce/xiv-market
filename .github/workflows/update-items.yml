@@ -1,0 +1,80 @@
+name: Update Items Data
+
+on:
+  schedule:
+    # 每小时的 :07/:22/:37/:52，避开整点拥堵时段
+    - cron: "7-59/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write # push 数据更新 commit
+  actions: write # 触发 deploy.yml（GITHUB_TOKEN push 不会触发其他 workflow）
+
+concurrency:
+  group: update-items
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for upstream Item.csv updates
+        id: check
+        run: |
+          LOCAL_COMMIT=$(python3 -c "import json; print(json.load(open('app/public/version.json'))['commit'])")
+          echo "Local items.json commit: $LOCAL_COMMIT"
+
+          REMOTE_JSON=$(curl -sf \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/thewakingsands/ffxiv-datamining-cn/commits?path=Item.csv&per_page=1" || true)
+
+          if [ -z "$REMOTE_JSON" ]; then
+            echo "GitHub API request failed, will retry on next scheduled run."
+            echo "outdated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          REMOTE_COMMIT=$(echo "$REMOTE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['sha'][:12])")
+          echo "Remote Item.csv latest commit: $REMOTE_COMMIT"
+          echo "remote_commit=$REMOTE_COMMIT" >> "$GITHUB_OUTPUT"
+
+          if [ "$LOCAL_COMMIT" = "$REMOTE_COMMIT" ]; then
+            echo "items.json is up to date."
+            echo "outdated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "items.json is outdated: $LOCAL_COMMIT -> $REMOTE_COMMIT"
+            echo "outdated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Bun
+        if: steps.check.outputs.outdated == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Run update-items
+        if: steps.check.outputs.outdated == 'true'
+        run: bun run update-items
+
+      - name: Commit and push
+        if: steps.check.outputs.outdated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/public/items.json app/public/version.json
+          if git diff --cached --quiet; then
+            echo "No changes after update, skipping commit."
+            exit 0
+          fi
+          git commit -m "chore: update items data (${{ steps.check.outputs.remote_commit }})"
+          git push
+
+      - name: Trigger deploy
+        if: steps.check.outputs.outdated == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml
