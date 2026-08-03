@@ -2,16 +2,48 @@ import type { DataCenter, World, MarketData, HistoryData, AggregatedItemData } f
 
 const BASE_URL = import.meta.env?.DEV ? '/api/universalis' : 'https://universalis.app'
 
-export async function fetchDataCenters(): Promise<DataCenter[]> {
-  const res = await fetch(`${BASE_URL}/api/v2/data-centers`)
-  if (!res.ok) throw new Error('Failed to fetch data centers')
-  return res.json()
+const STATIC_CACHE_TTL = 24 * 60 * 60 * 1000
+const DC_CACHE_KEY = 'xiv_data_centers'
+const WORLDS_CACHE_KEY = 'xiv_worlds'
+
+async function fetchWithLocalCache<T>(cacheKey: string, path: string, errorMessage: string): Promise<T> {
+  const cached = localStorage.getItem(cacheKey)
+  if (cached) {
+    try {
+      const { data, ts } = JSON.parse(cached)
+      if (Date.now() - ts < STATIC_CACHE_TTL) return data as T
+    } catch { /* ignore */ }
+  }
+  const res = await fetch(`${BASE_URL}${path}`)
+  if (!res.ok) throw new Error(errorMessage)
+  const data = (await res.json()) as T
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() }))
+  } catch { /* quota exceeded */ }
+  return data
 }
 
-export async function fetchWorlds(): Promise<World[]> {
-  const res = await fetch(`${BASE_URL}/api/v2/worlds`)
-  if (!res.ok) throw new Error('Failed to fetch worlds')
-  return res.json()
+export function fetchDataCenters(): Promise<DataCenter[]> {
+  return fetchWithLocalCache(DC_CACHE_KEY, '/api/v2/data-centers', 'Failed to fetch data centers')
+}
+
+export function fetchWorlds(): Promise<World[]> {
+  return fetchWithLocalCache(WORLDS_CACHE_KEY, '/api/v2/worlds', 'Failed to fetch worlds')
+}
+
+// 按 key 的在途请求取消：同 key 的新请求会 abort 旧请求，
+// 避免快速翻页/切换范围时在途旧请求浪费带宽。不同 key（如 Materia 的并发批次）互不影响。
+const inflightRequests = new Map<string, AbortController>()
+
+async function fetchWithAbort(key: string, url: string): Promise<Response> {
+  inflightRequests.get(key)?.abort()
+  const controller = new AbortController()
+  inflightRequests.set(key, controller)
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } finally {
+    if (inflightRequests.get(key) === controller) inflightRequests.delete(key)
+  }
 }
 
 const MARKETABLE_CACHE_KEY = 'xiv_marketable_items'
@@ -39,7 +71,8 @@ export async function fetchAggregatedData(
   itemIds: string,
   scope: 'region' | 'dc' | 'world' = 'region'
 ): Promise<AggregatedItemData[]> {
-  const res = await fetch(
+  const res = await fetchWithAbort(
+    `aggregated:${worldDcRegion}:${itemIds}`,
     `${BASE_URL}/api/v2/aggregated/${encodeURIComponent(worldDcRegion)}/${itemIds}`
   )
   if (!res.ok) throw new Error('Failed to fetch aggregated data')
@@ -175,7 +208,10 @@ export async function fetchMarketData(
   worldDcRegion: string,
   itemIds: string
 ): Promise<Record<number, MarketData>> {
-  const res = await fetch(`${BASE_URL}/api/v2/${encodeURIComponent(worldDcRegion)}/${itemIds}`)
+  const res = await fetchWithAbort(
+    `market:${worldDcRegion}:${itemIds}`,
+    `${BASE_URL}/api/v2/${encodeURIComponent(worldDcRegion)}/${itemIds}`
+  )
   if (!res.ok) throw new Error('Failed to fetch market data')
   const raw: any = await res.json()
   const result: Record<number, MarketData> = {}
@@ -201,7 +237,8 @@ export async function fetchHistoryData(
   itemIds: string
 ): Promise<HistoryData> {
   const entriesWithin = 30 * 24 * 60 * 60 // 30 days
-  const res = await fetch(
+  const res = await fetchWithAbort(
+    `history:${worldDcRegion}:${itemIds}`,
     `${BASE_URL}/api/v2/history/${encodeURIComponent(worldDcRegion)}/${itemIds}?entriesWithin=${entriesWithin}`
   )
   if (!res.ok) throw new Error('Failed to fetch history data')

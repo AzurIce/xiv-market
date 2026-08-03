@@ -54,13 +54,14 @@ export async function loadItems(): Promise<void> {
     try {
       itemsCache = normalizeItems(await fetchItems())
       itemCount = itemsCache.size
+      itemsLoaded = true
       console.log('[Items] Loaded %d items (commit: %s)', itemCount, __BUILD_COMMIT__)
     } catch (err) {
+      // 失败时不标记 loaded，下次调用 loadItems() 可重试
       console.error('[Items] Failed to load: %s', err instanceof Error ? err.message : err)
       itemsCache = new Map()
       itemCount = 0
     } finally {
-      itemsLoaded = true
       setItemsRevision((version) => version + 1)
     }
   })().finally(() => { loadPromise = null })

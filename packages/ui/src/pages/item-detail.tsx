@@ -1,14 +1,16 @@
 import { createResource, createMemo, createSignal, createEffect, Show, Suspense, For, on, onMount, onCleanup } from 'solid-js'
 import { useParams, A, useSearchParams } from '@solidjs/router'
-import { fetchMarketData, fetchHistoryData, selectedRegion, dataCenters, worlds, getItemName, getItemIconUrl, getDcNameByWorldName, getWorldName, baseUrl } from '@xiv-market/shared'
+import { fetchMarketData, fetchHistoryData, selectedRegion, dataCenters, worlds, getItemName, getItemIconUrl, getDcNameByWorldName, getWorldName, getDcColorHex, baseUrl } from '@xiv-market/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
 import { Badge } from '../badge'
 import { Skeleton } from '../skeleton'
 import { Table, TableBody, TableRow, TableHead, TableCell, TableHeader } from '../table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../tabs'
-import { StatCard } from '../stat-card'
 import { EmptyState } from '../empty-state'
+import { RefreshButton } from '../refresh-button'
 import { ScopeSelect } from '../scope-select'
+import { WorldBadge } from '../world-badge'
+import { Tooltip, TooltipPortal, TooltipTrigger, TooltipContent } from '../tooltip'
 
 type ChartConstructor = typeof import('chart.js/auto').default
 
@@ -30,14 +32,6 @@ async function loadChart(registerViolin = false): Promise<ChartConstructor> {
 }
 
 const CHINA_DC_NAMES = ['陆行鸟', '莫古力', '猫小胖', '豆豆柴'] as const
-type ChinaDcName = typeof CHINA_DC_NAMES[number]
-
-const DC_COLORS: Record<ChinaDcName, { solid: string; bg: string; point: string }> = {
-  '陆行鸟': { solid: '#22d3ee', bg: '#22d3ee80', point: '#22d3ee80' },
-  '莫古力': { solid: '#a78bfa', bg: '#a78bfa80', point: '#a78bfa80' },
-  '猫小胖': { solid: '#fbbf24', bg: '#fbbf2480', point: '#fbbf2480' },
-  '豆豆柴': { solid: '#34d399', bg: '#34d39980', point: '#34d39980' },
-}
 
 const FALLBACK_DC_COLOR = { solid: '#9ca3af', bg: '#9ca3af80', point: '#9ca3af80' }
 const SERVER_COLORS = [
@@ -52,7 +46,8 @@ const SERVER_COLORS = [
 ]
 
 function getDcColor(dc: string | null | undefined) {
-  if (dc && dc in DC_COLORS) return DC_COLORS[dc as ChinaDcName]
+  const hex = dc ? getDcColorHex(dc) : null
+  if (hex) return { solid: hex, bg: `${hex}80`, point: `${hex}80` }
   return FALLBACK_DC_COLOR
 }
 
@@ -148,6 +143,88 @@ function formatTime(ts: number): string {
   const diffD = Math.floor(diffH / 24)
   if (diffD < 30) return `${diffD} 天前`
   return d.toLocaleDateString('zh-CN')
+}
+
+// 价格分布的迷你区间条：P25~P75 色带 + P50 中线 + 最低挂单圆点
+function PriceRangeStrip(props: { min?: number; p25: number; p50: number; p75: number }) {
+  const domain = createMemo(() => {
+    const lo = Math.min(props.min ?? props.p25, props.p25)
+    const hi = props.p75
+    const span = hi - lo
+    const pad = span > 0 ? span * 0.25 : Math.max(hi * 0.1, 1)
+    return { lo: lo - pad, hi: hi + pad }
+  })
+  const pct = (v: number) =>
+    Math.min(100, Math.max(0, ((v - domain().lo) / (domain().hi - domain().lo)) * 100))
+
+  const ticks = createMemo(() => [
+    { label: 'P25', value: props.p25, left: pct(props.p25) },
+    { label: 'P75', value: props.p75, left: pct(props.p75) },
+  ])
+
+  // 标签横向避让：靠近左/右边缘时改为贴边对齐，避免溢出容器
+  const anchorStyle = (left: number) => ({
+    left: `${left}%`,
+    transform: left <= 4 ? 'translateX(0)' : left >= 96 ? 'translateX(-100%)' : 'translateX(-50%)',
+  })
+
+  return (
+    <div>
+      {/* P50 标签放在条的上方，避免与下方 P25/P75 标签重叠 */}
+      <div class="relative mb-1.5 h-6">
+        <span
+          class="absolute top-0 flex flex-col items-center gap-0.5 whitespace-nowrap leading-none tabular-nums"
+          style={anchorStyle(pct(props.p50))}
+        >
+          <span class="text-[9px] text-amber-500">P50</span>
+          <span class="text-[10px] font-semibold text-amber-500">{formatAxisGil(props.p50)}</span>
+        </span>
+        {/* 最低挂单价格：与 P50 距离过近时（分布退化）省略，避免标签相撞 */}
+        <Show when={props.min != null && props.min > 0 && Math.abs(pct(props.min!) - pct(props.p50)) > 12}>
+          <span
+            class="absolute top-0 flex flex-col items-center gap-0.5 whitespace-nowrap leading-none tabular-nums"
+            style={anchorStyle(pct(props.min!))}
+          >
+            <span class="text-[9px] text-muted-foreground">最低</span>
+            <span class="text-[10px] font-semibold text-foreground">{formatAxisGil(props.min!)}</span>
+          </span>
+        </Show>
+      </div>
+      <div class="relative h-1.5 rounded-full bg-muted">
+        <div
+          class="absolute inset-y-0 rounded-full bg-primary/20"
+          style={{
+            left: `${pct(props.p25)}%`,
+            width: `${Math.max(pct(props.p75) - pct(props.p25), 1.5)}%`,
+          }}
+        />
+        <div
+          class="absolute -inset-y-[3px] w-0.5 rounded-full bg-amber-500"
+          style={{ left: `calc(${pct(props.p50)}% - 1px)` }}
+        />
+        <Show when={props.min != null && props.min > 0}>
+          <div
+            class="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-card"
+            style={{ left: `${pct(props.min!)}%` }}
+            title={`最低挂单 ${formatGil(props.min!)} Gil`}
+          />
+        </Show>
+      </div>
+      <div class="relative mt-1.5 h-6">
+        <For each={ticks()}>
+          {(tick) => (
+            <span
+              class="absolute top-0 flex flex-col items-center gap-0.5 whitespace-nowrap leading-none tabular-nums"
+              style={anchorStyle(tick.left)}
+            >
+              <span class="text-[9px] text-muted-foreground">{tick.label}</span>
+              <span class="text-[10px] text-muted-foreground">{formatAxisGil(tick.value)}</span>
+            </span>
+          )}
+        </For>
+      </div>
+    </div>
+  )
 }
 
 function ListingTableSkeleton() {
@@ -638,11 +715,26 @@ function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: 
           </div>
         </Show>
         <label class="inline-flex items-center gap-2 cursor-pointer select-none">
-          <span
-            class="text-xs text-muted-foreground"
-            title="从统计中移除明显偏高的挂单，影响表格数值和条形范围"
-          >
+          <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
             忽略异常高价
+            <Tooltip>
+              <TooltipTrigger
+                class="inline-flex items-center text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                aria-label="忽略异常高价的机制说明"
+                onClick={(e) => e.preventDefault()}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3.5">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
+                </svg>
+              </TooltipTrigger>
+              <TooltipPortal>
+                <TooltipContent class="max-w-64 whitespace-normal">
+                  按每个服务器的挂单价计算四分位距（IQR = P75 − P25），移除高于 P75 + 3×IQR 的挂单；挂单少于 4 个时不过滤。影响最低价、中位价、P25~P75 统计和条形范围。
+                </TooltipContent>
+              </TooltipPortal>
+            </Tooltip>
           </span>
           <button
             role="switch"
@@ -1138,31 +1230,39 @@ export default function ItemDetail() {
     })
   }
 
-  const [marketDataResult] = createResource(
+  // 按当前 scope 请求：history 端点每次查询有 1800 条上限且整个 scope 共享，
+  // region 级响应对热门物品达不到 30 天深度，dc/world 直查有独立额度、数据更完整，
+  // 因此切 scope 必须重新请求（在途旧请求由 api.ts 的 AbortController 取消）
+  const [marketDataResult, { refetch: refetchMarketData }] = createResource(
     () => {
       const id = itemId()
       if (!id) return null
       return { scope: scope(), id }
     },
-    async ({ scope: s, id }: { scope: string; id: string }) => ({
-      scope: s,
+    async ({ scope, id }: { scope: string; id: string }) => ({
+      scope,
       id,
-      data: await fetchMarketData(s, id),
+      data: await fetchMarketData(scope, id),
     })
   )
 
-  const [historyDataResult] = createResource(
+  const [historyDataResult, { refetch: refetchHistoryData }] = createResource(
     () => {
       const id = itemId()
       if (!id) return null
       return { scope: scope(), id }
     },
-    async ({ scope: s, id }: { scope: string; id: string }) => ({
-      scope: s,
+    async ({ scope, id }: { scope: string; id: string }) => ({
+      scope,
       id,
-      data: await fetchHistoryData(s, id),
+      data: await fetchHistoryData(scope, id),
     })
   )
+
+  const handleRefresh = () => {
+    refetchMarketData()
+    refetchHistoryData()
+  }
 
   const marketData = createMemo(() => {
     const result = marketDataResult()
@@ -1180,6 +1280,16 @@ export default function ItemDetail() {
   const isMarketDataLoading = createMemo(() => {
     const result = marketDataResult()
     return marketDataResult.loading || Boolean(result && (result.scope !== scope() || result.id !== itemId()))
+  })
+  // 只在"没有任何可展示数据"时才用骨架屏：
+  // 初次加载/切 scope 时 marketData() 为空 → 骨架屏；
+  // 同 scope 点刷新（refetch）时旧数据仍然有效 → 保留内容，由刷新按钮的旋转表达加载中
+  const showMarketSkeleton = createMemo(() => isMarketDataLoading() && !marketData())
+  // 成交历史同理：加载中且无数据时显示骨架屏，而不是闪现「暂无历史数据」
+  const showHistorySkeleton = createMemo(() => {
+    const result = historyDataResult()
+    const stale = Boolean(result && (result.scope !== scope() || result.id !== itemId()))
+    return (historyDataResult.loading || stale) && history().length === 0
   })
   const showHistoryWorld = createMemo(() =>
     history().some((sale) => Boolean(sale.worldName) && sale.worldName !== scope())
@@ -1202,7 +1312,6 @@ export default function ItemDetail() {
         return Number(a.total ?? 0) - Number(b.total ?? 0)
       })[0]
     const minListingWorld = minListing?.worldName || ''
-    const minListingDc = getDcNameByWorldName(minListingWorld) || ''
 
     return {
       velocity: data.regularSaleVelocity,
@@ -1212,7 +1321,6 @@ export default function ItemDetail() {
       listingCount: listings.length,
       minListing,
       minListingWorld,
-      minListingDc,
       p25: percentile(prices, 0.25),
       p50: percentile(prices, 0.5),
       p75: percentile(prices, 0.75),
@@ -1291,50 +1399,64 @@ export default function ItemDetail() {
             {/* 操作按钮组 */}
             <div class="flex items-center gap-0.5 flex-shrink-0">
               {/* 复制按钮 */}
-              <button
-                onClick={handleCopyName}
-                class={
-                  'rounded-md hover:bg-accent/80 hover:text-accent-foreground transition-all duration-200 flex items-center justify-center text-muted-foreground ' +
-                  (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
-                }
-                aria-label={copied() ? '已复制' : '复制名称'}
-                title={copied() ? '已复制' : '复制名称'}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'}>
-                  <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                </svg>
-              </button>
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={handleCopyName}
+                  class={
+                    'rounded-md hover:bg-accent/80 hover:text-accent-foreground transition-all duration-200 flex items-center justify-center text-muted-foreground ' +
+                    (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
+                  }
+                  aria-label={copied() ? '已复制' : '复制名称'}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'}>
+                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                  </svg>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent>{copied() ? '已复制' : '复制名称'}</TooltipContent>
+                </TooltipPortal>
+              </Tooltip>
 
               {/* 灰机wiki */}
-              <a
-                href={`https://ff14.huijiwiki.com/wiki/${encodeURIComponent('物品:' + getItemName(Number(itemId())))}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                class={
-                  'rounded-md hover:bg-accent/80 hover:opacity-100 opacity-70 transition-all duration-200 flex items-center justify-center overflow-hidden ' +
-                  (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
-                }
-                title="在灰机wiki查看"
-                aria-label="在灰机wiki查看"
-              >
-                <img src={`${baseUrl()}huiji.webp`} alt="灰机wiki" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
-              </a>
+              <Tooltip>
+                <TooltipTrigger
+                  as="a"
+                  href={`https://ff14.huijiwiki.com/wiki/${encodeURIComponent('物品:' + getItemName(Number(itemId())))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class={
+                    'rounded-md hover:bg-accent/80 hover:opacity-100 opacity-70 transition-all duration-200 flex items-center justify-center overflow-hidden ' +
+                    (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
+                  }
+                  aria-label="在灰机wiki查看"
+                >
+                  <img src={`${baseUrl()}huiji.webp`} alt="灰机wiki" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent>在灰机wiki查看</TooltipContent>
+                </TooltipPortal>
+              </Tooltip>
 
               {/* Garland Tools */}
-              <a
-                href={`https://garlandtools.cn/db/#item/${itemId()}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                class={
-                  'rounded-md hover:bg-accent/80 hover:opacity-100 opacity-70 transition-all duration-200 flex items-center justify-center overflow-hidden ' +
-                  (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
-                }
-                title="在 Garland Tools 查看"
-                aria-label="在 Garland Tools 查看"
-              >
-                <img src={`${baseUrl()}garland.webp`} alt="Garland Tools" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
-              </a>
+              <Tooltip>
+                <TooltipTrigger
+                  as="a"
+                  href={`https://garlandtools.cn/db/#item/${itemId()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class={
+                    'rounded-md hover:bg-accent/80 hover:opacity-100 opacity-70 transition-all duration-200 flex items-center justify-center overflow-hidden ' +
+                    (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
+                  }
+                  aria-label="在 Garland Tools 查看"
+                >
+                  <img src={`${baseUrl()}garland.webp`} alt="Garland Tools" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} draggable="false" />
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent>在 Garland Tools 查看</TooltipContent>
+                </TooltipPortal>
+              </Tooltip>
             </div>
 
             <div class="flex-1 min-w-2 sm:min-w-4" />
@@ -1353,9 +1475,14 @@ export default function ItemDetail() {
               </Show>
             </div>
 
-            {/* 数据范围选择器 - 桌面端 */}
-            <div class="hidden sm:block flex-shrink-0">
+            {/* 数据范围选择器 + 刷新按钮 - 桌面端 */}
+            <div class="hidden sm:flex items-center gap-1.5 flex-shrink-0">
               <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
+              <RefreshButton
+                loading={marketDataResult.loading || historyDataResult.loading}
+                onClick={handleRefresh}
+                class={isScrolled() ? 'size-6' : 'size-7'}
+              />
             </div>
           </div>
 
@@ -1368,9 +1495,14 @@ export default function ItemDetail() {
           >
             <span class="text-sm text-muted-foreground">#{itemId()}</span>
             <div class="flex-1" />
-            {/* 移动端 ScopeSelect */}
-            <div class="sm:hidden">
+            {/* 移动端 ScopeSelect + 刷新按钮 */}
+            <div class="sm:hidden flex items-center gap-1.5">
               <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
+              <RefreshButton
+                loading={marketDataResult.loading || historyDataResult.loading}
+                onClick={handleRefresh}
+                class="size-7"
+              />
             </div>
           </div>
         </div>
@@ -1379,106 +1511,124 @@ export default function ItemDetail() {
       <Show
         when={stats()}
         fallback={
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-            <For each={Array.from({ length: 4 })}>
-              {() => <Card><CardHeader class="pb-2"><Skeleton class="h-4 w-20" /></CardHeader><CardContent><Skeleton class="h-8 w-24" /></CardContent></Card>}
-            </For>
-          </div>
+          <Show
+            when={isMarketDataLoading()}
+            fallback={
+              <Card class="mb-6">
+                <CardContent>
+                  <EmptyState
+                    title="暂无市场数据"
+                    description="该物品在当前范围内没有挂单与成交记录，可尝试切换更大的数据范围"
+                  />
+                </CardContent>
+              </Card>
+            }
+          >
+            <Card class="mb-6">
+              <CardContent class="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-border">
+                <div class="shrink-0 space-y-1.5 sm:w-44 sm:pr-6">
+                  <Skeleton class="h-3 w-14" />
+                  <Skeleton class="h-8 w-24" />
+                </div>
+                <div class="min-w-0 flex-1 space-y-2.5 sm:px-6">
+                  <Skeleton class="h-3 w-14" />
+                  <Skeleton class="h-1.5 w-full" />
+                </div>
+                <div class="flex shrink-0 gap-8 sm:flex-col sm:gap-3 sm:pl-6">
+                  <div class="space-y-1.5"><Skeleton class="h-3 w-14" /><Skeleton class="h-5 w-20" /></div>
+                  <div class="space-y-1.5"><Skeleton class="h-3 w-14" /><Skeleton class="h-5 w-16" /></div>
+                </div>
+              </CardContent>
+            </Card>
+          </Show>
         }
       >
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <StatCard
-            title="最低挂单"
-            icon={
-              <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 17 5 7h2l3 10" /><path d="M3.5 14h7" /><path d="M14 7h4" /><path d="M16 7v10" /></svg>
-            }
-          >
-            <Show
-              when={stats()?.minListing}
-              fallback={<span class="text-muted-foreground">-</span>}
-            >
-              {(listing) => (
-                <div class="space-y-1.5">
-                  <div class="flex items-baseline gap-1.5">
-                    <span class="text-xl font-semibold tabular-nums">
-                      {formatGil(listing().pricePerUnit)}
-                    </span>
-                    <span class="text-xs text-muted-foreground">Gil</span>
-                    <Badge variant={listing().hq ? 'default' : 'secondary'}>
-                      {listing().hq ? 'HQ' : 'NQ'}
-                    </Badge>
-                  </div>
-                  <div class="min-w-0 text-xs leading-snug text-muted-foreground">
-                    <div class="truncate" title={stats()?.minListingWorld || scope()}>
-                      {stats()?.minListingWorld || scope()}
+        <Card class="mb-6">
+          <CardContent class="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-border">
+            {/* 最低挂单（主信息） */}
+            <div class="shrink-0 sm:w-44 sm:pr-6">
+              <div class="text-xs font-medium text-muted-foreground">最低挂单</div>
+              <Show
+                when={stats()?.minListing}
+                fallback={<div class="mt-1.5 text-muted-foreground">-</div>}
+              >
+                {(listing) => (
+                  <>
+                    <div class="mt-1.5 flex items-baseline gap-1.5">
+                      <span class="text-2xl font-bold tracking-tight tabular-nums">
+                        {formatGil(listing().pricePerUnit)}
+                      </span>
+                      <span class="text-xs text-muted-foreground">Gil</span>
+                      <Badge variant={listing().hq ? 'default' : 'secondary'}>
+                        {listing().hq ? 'HQ' : 'NQ'}
+                      </Badge>
                     </div>
-                    <Show when={stats()?.minListingDc}>
-                      <div class="truncate" title={stats()?.minListingDc}>
-                        {stats()?.minListingDc}
-                      </div>
-                    </Show>
-                  </div>
-                </div>
-              )}
-            </Show>
-          </StatCard>
-          <StatCard
-            title="价格分布"
-            icon={
-              <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
-            }
-          >
-            <div class="grid grid-cols-3 gap-2">
-              <div class="min-w-0">
-                <div class="text-[10px] text-muted-foreground">P25</div>
-                <div class="text-sm font-medium tabular-nums truncate" title={formatGil(stats()?.p25 ?? 0)}>
-                  {stats()?.p25 ? formatAxisGil(stats()!.p25) : '-'}
+                    <WorldBadge
+                      class="mt-1.5 text-xs text-muted-foreground"
+                      worldName={stats()?.minListingWorld || scope()}
+                    />
+                  </>
+                )}
+              </Show>
+            </div>
+
+            {/* 价格分布（区间条，占满剩余宽度） */}
+            <div class="min-w-0 flex-1 sm:px-6">
+              <div class="mb-2.5 text-xs font-medium text-muted-foreground">价格分布</div>
+              <Show
+                when={stats()?.p75}
+                fallback={<div class="text-muted-foreground">-</div>}
+              >
+                <PriceRangeStrip
+                  min={Number(stats()?.minListing?.pricePerUnit ?? 0) || undefined}
+                  p25={stats()!.p25}
+                  p50={stats()!.p50}
+                  p75={stats()!.p75}
+                />
+              </Show>
+            </div>
+
+            {/* 日销量 + 挂单数（次要信息） */}
+            <div class="flex shrink-0 gap-8 sm:flex-col sm:gap-3 sm:pl-6">
+              <div>
+                <div class="text-xs font-medium text-muted-foreground">日销量</div>
+                <div class="mt-1 space-y-0.5 text-sm tabular-nums">
+                  <Show when={stats()?.nqVelocity != null && stats()!.nqVelocity > 0}>
+                    <div>
+                      <span class="text-xs text-muted-foreground">NQ </span>
+                      <span class="font-medium">{formatDailySales(stats()!.nqVelocity)}</span>
+                    </div>
+                  </Show>
+                  <Show when={stats()?.hqVelocity != null && stats()!.hqVelocity > 0}>
+                    <div>
+                      <span class="text-xs text-muted-foreground">HQ </span>
+                      <span class="font-medium">{formatDailySales(stats()!.hqVelocity)}</span>
+                    </div>
+                  </Show>
+                  <Show when={(stats()?.nqVelocity ?? 0) === 0 && (stats()?.hqVelocity ?? 0) === 0}>
+                    <span class="text-muted-foreground">-</span>
+                  </Show>
                 </div>
               </div>
-              <div class="min-w-0">
-                <div class="text-[10px] text-muted-foreground">P50</div>
-                <div class="text-sm font-semibold text-amber-500 tabular-nums truncate" title={formatGil(stats()?.p50 ?? 0)}>
-                  {stats()?.p50 ? formatAxisGil(stats()!.p50) : '-'}
-                </div>
-              </div>
-              <div class="min-w-0">
-                <div class="text-[10px] text-muted-foreground">P75</div>
-                <div class="text-sm font-medium tabular-nums truncate" title={formatGil(stats()?.p75 ?? 0)}>
-                  {stats()?.p75 ? formatAxisGil(stats()!.p75) : '-'}
+              <div>
+                <div class="text-xs font-medium text-muted-foreground">挂单数</div>
+                <div class="mt-1 flex items-baseline gap-2">
+                  <span class="text-sm font-semibold tabular-nums">
+                    {stats()?.listingCount.toLocaleString('zh-CN')}
+                  </span>
+                  <Show when={stats()?.lastUploadTime}>
+                    <span class="text-xs text-muted-foreground">
+                      {formatTime(stats()?.lastUploadTime ?? 0)}更新
+                    </span>
+                  </Show>
                 </div>
               </div>
             </div>
-          </StatCard>
-          <StatCard title="日销量">
-            <div class="flex flex-col leading-snug">
-              <Show when={stats()?.nqVelocity != null && stats()!.nqVelocity > 0}>
-                <span class="text-muted-foreground text-xs">NQ <span class="font-medium text-foreground">{stats()?.nqVelocity.toFixed(2)}</span> /天</span>
-              </Show>
-              <Show when={stats()?.hqVelocity != null && stats()!.hqVelocity > 0}>
-                <span class="text-xs">HQ <span class="font-medium">{stats()?.hqVelocity.toFixed(2)}</span> /天</span>
-              </Show>
-              <Show when={(stats()?.nqVelocity ?? 0) === 0 && (stats()?.hqVelocity ?? 0) === 0}>
-                <span class="text-muted-foreground">-</span>
-              </Show>
-            </div>
-          </StatCard>
-          <StatCard title="挂单概况">
-            <div class="flex flex-col leading-snug">
-              <span class="text-xl font-semibold tabular-nums">
-                {stats()?.listingCount.toLocaleString('zh-CN')}
-              </span>
-              <span class="text-xs text-muted-foreground">当前范围挂单数</span>
-              <Show when={stats()?.lastUploadTime}>
-                <span class="text-xs text-muted-foreground mt-1">
-                  更新于 {formatTime(stats()?.lastUploadTime ?? 0)}
-                </span>
-              </Show>
-            </div>
-          </StatCard>
-        </div>
+          </CardContent>
+        </Card>
       </Show>
 
-      <Show when={!isMarketDataLoading()} fallback={<ListingChartSkeleton />}>
+      <Show when={!showMarketSkeleton()} fallback={<ListingChartSkeleton />}>
         <Show when={currentListings().length > 0}>
           <Card class="mb-6 py-3">
             <CardHeader class="pb-2">
@@ -1503,27 +1653,29 @@ export default function ItemDetail() {
         </Show>
       </Show>
 
-      <Show when={history().length > 0}>
-        <Card class="mb-6 py-3">
-          <CardHeader class="pb-2">
-            <CardTitle class="text-sm">交易走势</CardTitle>
-            <CardDescription class="text-xs">按服务器拆分的成交记录可视化</CardDescription>
-          </CardHeader>
-          <CardContent class="pt-0">
-            <Tabs value={historyChartTab()} onChange={setHistoryChartTab}>
-              <TabsList class="mb-4">
-                <TabsTrigger value="line">走势</TabsTrigger>
-                <TabsTrigger value="scatter">散点</TabsTrigger>
-              </TabsList>
-              <TabsContent value="line">
-                <ServerHistoryTrendChart history={history()} />
-              </TabsContent>
-              <TabsContent value="scatter">
-                <ServerHistoryScatterChart history={history()} scope={scope()} />
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+      <Show when={history().length > 0 || showHistorySkeleton()}>
+        <Show when={history().length > 0} fallback={<ListingChartSkeleton />}>
+          <Card class="mb-6 py-3">
+            <CardHeader class="pb-2">
+              <CardTitle class="text-sm">交易走势</CardTitle>
+              <CardDescription class="text-xs">按服务器拆分的成交记录可视化</CardDescription>
+            </CardHeader>
+            <CardContent class="pt-0">
+              <Tabs value={historyChartTab()} onChange={setHistoryChartTab}>
+                <TabsList class="mb-4">
+                  <TabsTrigger value="line">走势</TabsTrigger>
+                  <TabsTrigger value="scatter">散点</TabsTrigger>
+                </TabsList>
+                <TabsContent value="line">
+                  <ServerHistoryTrendChart history={history()} />
+                </TabsContent>
+                <TabsContent value="scatter">
+                  <ServerHistoryScatterChart history={history()} scope={scope()} />
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </Show>
       </Show>
 
       <div>
@@ -1538,13 +1690,13 @@ export default function ItemDetail() {
               <CardHeader class="pb-2">
                 <CardTitle class="text-sm">当前挂单</CardTitle>
                 <CardDescription class="text-xs">
-                  <Show when={!isMarketDataLoading()} fallback="正在加载挂单数据">
+                  <Show when={!showMarketSkeleton()} fallback="正在加载挂单数据">
                     共 {currentListings().length} 个挂单
                   </Show>
                 </CardDescription>
               </CardHeader>
               <CardContent class="pt-0">
-                <Show when={!isMarketDataLoading()} fallback={<ListingTableSkeleton />}>
+                <Show when={!showMarketSkeleton()} fallback={<ListingTableSkeleton />}>
                   <Show
                     when={currentListings().length > 0}
                     fallback={
@@ -1582,7 +1734,7 @@ export default function ItemDetail() {
                                 {formatGil(listing.total)} Gil
                               </TableCell>
                               <TableCell class="text-muted-foreground">
-                                {listing.worldName || scope()}
+                                <WorldBadge worldName={listing.worldName || scope()} />
                               </TableCell>
                               <TableCell class="text-muted-foreground">
                                 {listing.retainerName}
@@ -1602,17 +1754,26 @@ export default function ItemDetail() {
             <Card class="py-3">
               <CardHeader class="pb-2">
                 <CardTitle class="text-sm">成交历史</CardTitle>
-                <CardDescription class="text-xs">近期 {history().length} 笔成交记录</CardDescription>
+                <CardDescription class="text-xs">
+                  <Show when={!showHistorySkeleton()} fallback="正在加载成交记录">
+                    近期 {history().length} 笔成交记录
+                  </Show>
+                </CardDescription>
               </CardHeader>
               <CardContent class="pt-0">
                 <Suspense fallback={<Skeleton class="h-[400px]" />}>
                   <Show
                     when={history().length > 0}
                     fallback={
-                      <EmptyState
-                        title="暂无历史数据"
-                        description="该物品在当前区域暂无历史成交记录"
-                      />
+                      <Show
+                        when={!showHistorySkeleton()}
+                        fallback={<Skeleton class="h-[400px]" />}
+                      >
+                        <EmptyState
+                          title="暂无历史数据"
+                          description="该物品在当前区域暂无历史成交记录"
+                        />
+                      </Show>
                     }
                   >
                     <Table>
@@ -1650,7 +1811,7 @@ export default function ItemDetail() {
                               </TableCell>
                               <Show when={showHistoryWorld()}>
                                 <TableCell class="text-muted-foreground">
-                                  {sale.worldName || '-'}
+                                  <WorldBadge worldName={sale.worldName} />
                                 </TableCell>
                               </Show>
                               <TableCell class="text-muted-foreground text-xs">

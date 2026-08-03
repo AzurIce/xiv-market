@@ -43,11 +43,10 @@ packages/
 │   └── src/index.ts     # 统一导出
 │
 └── ui/                  # @xiv-market/ui — UI 组件 + 页面
-    ├── src/primitives/  # Kobalte 包装组件
-    ├── src/base/        # 纯 CSS 组件
+    ├── src/*.tsx        # 扁平组件目录（Kobalte 包装、纯 CSS 组件、模式组件）
+    │                    # 如 button、select、empty-state、refresh-button、world-badge、scope-select
     ├── src/layout/      # 布局组件（Navbar）
-    ├── src/patterns/    # 模式组件（EmptyState、ErrorBoundary）
-    ├── src/pages/       # 共享页面（Home、ItemDetail、Settings）
+    ├── src/pages/       # 共享页面（Home、Materia、ItemDetail、Settings）
     └── src/index.ts     # 统一导出
 
 app/                     # xiv-market 应用（GitHub Pages 部署）

@@ -1,10 +1,9 @@
-import { createEffect, createMemo, createResource, createSignal, For, Show, Suspense } from 'solid-js'
+import { createEffect, createMemo, createResource, createSignal, onCleanup, For, Show, Suspense } from 'solid-js'
 import { useNavigate, useSearchParams } from '@solidjs/router'
 import {
   fetchAggregatedData,
   getAllItems,
   getIconUrl,
-  getWorldDisplayName,
   selectedRegion,
   type AggregatedItemData,
 } from '@xiv-market/shared'
@@ -13,9 +12,11 @@ import { Card, CardContent } from '../card'
 import { EmptyState } from '../empty-state'
 import { Input } from '../input'
 import { PageHeader } from '../page-header'
+import { RefreshButton } from '../refresh-button'
 import { Select, SelectContent, SelectItem, SelectPortal, SelectTrigger, SelectValue } from '../select'
 import { Skeleton } from '../skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../table'
+import { WorldBadge } from '../world-badge'
 
 type MateriaGrade = 'all' | '拾贰' | '拾壹' | '拾' | '玖' | '捌' | '柒' | '陆' | '伍' | '肆' | '叁' | '贰' | '壹'
 type MateriaKind = 'all' | 'battle' | 'crafter' | 'gatherer' | 'elemental' | 'retired'
@@ -265,10 +266,8 @@ function formatTime(ts: number | undefined): string {
   return d.toLocaleDateString('zh-CN')
 }
 
-function getListingWorld(agg: AggregatedItemData | undefined): string {
-  if (!agg) return '-'
-  const worldId = agg.nq.minListingWorldId
-  return worldId ? getWorldDisplayName(worldId) : '-'
+function getListingWorldId(agg: AggregatedItemData | undefined): number | undefined {
+  return agg?.nq.minListingWorldId
 }
 
 function gradeLabel(value: MateriaGrade) {
@@ -302,7 +301,7 @@ function sortLabel(value: SortKey) {
   return labels[value]
 }
 
-function ListingPrice(props: { price?: number; world?: string }) {
+function ListingPrice(props: { price?: number; worldId?: number }) {
   return (
     <div class="flex flex-col leading-tight">
       <Show
@@ -310,7 +309,7 @@ function ListingPrice(props: { price?: number; world?: string }) {
         fallback={<span class="text-muted-foreground">-</span>}
       >
         <span class="font-medium tabular-nums">{formatGil(props.price)}</span>
-        <span class="mt-0.5 text-xs text-muted-foreground">{props.world ?? '-'}</span>
+        <WorldBadge worldId={props.worldId} class="mt-0.5 text-xs text-muted-foreground" />
       </Show>
     </div>
   )
@@ -452,7 +451,7 @@ function MateriaMobileCard(props: { row: MateriaRow; onOpen: (e?: MouseEvent) =>
           </div>
           <div>
             <div class="mb-1 text-muted-foreground">最低挂单</div>
-            <ListingPrice price={agg()?.nq.minListingPrice} world={getListingWorld(agg())} />
+            <ListingPrice price={agg()?.nq.minListingPrice} worldId={getListingWorldId(agg())} />
           </div>
         </div>
         <div class="flex items-center justify-between border-t border-border/50 pt-2 text-xs text-muted-foreground">
@@ -469,6 +468,7 @@ export default function MateriaPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = createSignal(typeof searchParams.q === 'string' ? searchParams.q : '')
+  const [debouncedQuery, setDebouncedQuery] = createSignal(query())
   const [grade, setGrade] = createSignal<MateriaGrade>(
     MATERIA_GRADES.includes(searchParams.grade as MateriaGrade) ? searchParams.grade as MateriaGrade : 'all'
   )
@@ -501,8 +501,9 @@ export default function MateriaPage() {
       .filter((item) => item.color !== 'gray')
   })
 
+  // 排序不在这里做（避免 sortKey 变化触发 agg 全量 refetch），基础排序固定为颜色→品级→类型→名称
   const filteredItems = createMemo<MateriaItem[]>(() => {
-    const search = query().trim().toLowerCase()
+    const search = debouncedQuery().trim().toLowerCase()
     return materiaItems()
       .filter((item) => {
         if (grade() !== 'all' && item.grade !== grade()) return false
@@ -514,7 +515,6 @@ export default function MateriaPage() {
       .sort((a, b) => {
         const colorOrder = COLOR_ORDER[a.color] - COLOR_ORDER[b.color]
         if (colorOrder !== 0) return colorOrder
-        if (sortKey() === 'name') return a.name.localeCompare(b.name, 'zh-CN') || a.id - b.id
         return b.gradeRank - a.gradeRank || a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name, 'zh-CN')
       })
   })
@@ -524,7 +524,7 @@ export default function MateriaPage() {
     for (const item of materiaItems()) {
       if (grade() !== 'all' && item.grade !== grade()) continue
       if (kind() !== 'all' && item.kind !== kind()) continue
-      const search = query().trim().toLowerCase()
+      const search = debouncedQuery().trim().toLowerCase()
       if (search && !item.name.toLowerCase().includes(search) && !item.id.toString().includes(search)) continue
       counts.all += 1
       counts[item.color] += 1
@@ -535,11 +535,11 @@ export default function MateriaPage() {
   const currentItems = createMemo(() => {
     return filteredItems()
   })
-  const [aggData] = createResource(
+  const [aggData, { refetch: refetchAggData }] = createResource(
     () => ({ region: selectedRegion(), ids: currentItems().map((item) => item.id) }),
     async ({ region, ids }) => {
       const map = new Map<number, AggregatedItemData>()
-      if (!ids.length) return map
+      if (!ids.length) return { region, map }
 
       const batches: number[][] = []
       for (let i = 0; i < ids.length; i += BATCH_SIZE) {
@@ -554,12 +554,25 @@ export default function MateriaPage() {
           map.set(item.itemId, item)
         }
       }
-      return map
+      return { region, map }
     }
   )
+  // 只接受属于当前区域的数据：初次加载/切区域时旧数据失效 → 骨架屏；
+  // 点刷新（同区域 refetch）时旧数据仍有效 → 保留内容，不闪骨架
+  const validAggData = createMemo(() => {
+    const result = aggData()
+    return result && result.region === selectedRegion() ? result.map : null
+  })
   const currentRows = createMemo<MateriaRow[]>(() => {
-    const map = aggData()
+    const map = validAggData()
     const rows = currentItems().map((item) => ({ ...item, agg: map?.get(item.id) }))
+    if (sortKey() === 'name') {
+      return rows.sort((a, b) => {
+        const colorOrder = COLOR_ORDER[a.color] - COLOR_ORDER[b.color]
+        if (colorOrder !== 0) return colorOrder
+        return a.name.localeCompare(b.name, 'zh-CN') || a.id - b.id
+      })
+    }
     if (sortKey() === 'minPrice') {
       return rows.sort((a, b) => {
         const aValue = a.agg?.nq.minListingPrice ?? Number.MAX_SAFE_INTEGER
@@ -629,9 +642,20 @@ export default function MateriaPage() {
     }
   })
 
+  let searchTimer: number | undefined
+  onCleanup(() => window.clearTimeout(searchTimer))
+
   const setQueryAndParams = (value: string) => {
     setQuery(value)
-    updateParams({ q: value })
+    window.clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(() => {
+      setDebouncedQuery(value)
+      updateParams({ q: value })
+    }, 300)
+  }
+
+  const handleRefresh = () => {
+    refetchAggData()
   }
 
   const itemPath = (itemId: number) => `/item/${itemId}`
@@ -656,6 +680,7 @@ export default function MateriaPage() {
       <PageHeader
         title="魔晶石行情"
         description="集中查看全部常规魔晶石的最低挂单、成交均价和日销量"
+        actions={<RefreshButton loading={aggData.loading} onClick={handleRefresh} />}
       />
 
       <div class="mb-6 grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
@@ -761,7 +786,7 @@ export default function MateriaPage() {
           }
         >
           <Show
-            when={!aggData.loading}
+            when={Boolean(validAggData())}
             fallback={
               <div class="space-y-2">
                 <For each={Array.from({ length: 8 })}>
@@ -826,7 +851,7 @@ export default function MateriaPage() {
                             <StatValue row={row} />
                           </TableCell>
                           <TableCell>
-                            <ListingPrice price={row.agg?.nq.minListingPrice} world={getListingWorld(row.agg)} />
+                            <ListingPrice price={row.agg?.nq.minListingPrice} worldId={getListingWorldId(row.agg)} />
                           </TableCell>
                           <TableCell>
                             <PriceValue value={row.agg?.nq.averageSalePrice} />

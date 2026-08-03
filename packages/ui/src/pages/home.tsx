@@ -1,8 +1,8 @@
-import { createEffect, createResource, createSignal, createMemo, For, Show, Suspense } from 'solid-js'
+import { createEffect, createResource, createSignal, createMemo, onCleanup, For, Show, Suspense } from 'solid-js'
 import { useNavigate, useSearchParams } from '@solidjs/router'
 import {
   fetchMarketableItems, fetchAggregatedData,
-  selectedRegion, getWorldDisplayName,
+  selectedRegion,
   getItemName, getItemIconUrl,
   type AggregatedItemData,
 } from '@xiv-market/shared'
@@ -13,6 +13,8 @@ import { Table, TableBody, TableRow, TableHead, TableCell, TableHeader } from '.
 import { Pagination } from '../pagination'
 import { PageHeader } from '../page-header'
 import { EmptyState } from '../empty-state'
+import { RefreshButton } from '../refresh-button'
+import { WorldBadge } from '../world-badge'
 
 function formatGil(v: number): string {
   return v.toLocaleString('zh-CN')
@@ -108,8 +110,8 @@ function MobileItemCard(props: {
   const minHqPrice = () => props.agg?.hq.minListingPrice
   const avgNqPrice = () => props.agg?.nq.averageSalePrice
   const avgHqPrice = () => props.agg?.hq.averageSalePrice
-  const minNqWorld = () => props.agg?.nq.minListingWorldId ? getWorldDisplayName(props.agg.nq.minListingWorldId) : null
-  const minHqWorld = () => props.agg?.hq.minListingWorldId ? getWorldDisplayName(props.agg.hq.minListingWorldId) : null
+  const minNqWorldId = () => props.agg?.nq.minListingWorldId
+  const minHqWorldId = () => props.agg?.hq.minListingWorldId
   const nqVelocity = () => props.agg?.nq.dailySaleVelocity ?? 0
   const hqVelocity = () => props.agg?.hq.dailySaleVelocity ?? 0
 
@@ -134,16 +136,16 @@ function MobileItemCard(props: {
               <div class="flex items-center gap-1">
                 <NqTag /><span class="font-medium">{formatGil(minNqPrice()!)}</span>
               </div>
-              <Show when={minNqWorld()}>
-                <div class="text-[10px] text-muted-foreground truncate mt-0.5">{minNqWorld()}</div>
+              <Show when={minNqWorldId()}>
+                <div class="mt-0.5"><WorldBadge worldId={minNqWorldId()} class="text-[10px] text-muted-foreground" /></div>
               </Show>
             </Show>
               <Show when={minHqPrice() != null && minHqPrice()! > 0}>
               <div class="flex items-center gap-1">
                 <HqTag /><span class="font-medium">{formatGil(minHqPrice()!)}</span>
               </div>
-              <Show when={minHqWorld()}>
-                <div class="text-[10px] text-muted-foreground truncate mt-0.5">{minHqWorld()}</div>
+              <Show when={minHqWorldId()}>
+                <div class="mt-0.5"><WorldBadge worldId={minHqWorldId()} class="text-[10px] text-muted-foreground" /></div>
               </Show>
             </Show>
           </div>
@@ -180,6 +182,7 @@ export default function Home() {
   const [searchParams, setSearchParams] = useSearchParams()
   const initialSearchQuery = typeof searchParams.q === 'string' ? searchParams.q : ''
   const [searchQuery, setSearchQuery] = createSignal(initialSearchQuery)
+  const [debouncedQuery, setDebouncedQuery] = createSignal(initialSearchQuery)
   const [isComposing, setIsComposing] = createSignal(false)
   const [page, setPage] = createSignal(1)
   const PAGE_SIZE = 50
@@ -189,6 +192,7 @@ export default function Home() {
     const q = typeof searchParams.q === 'string' ? searchParams.q : ''
     if (q !== searchQuery()) {
       setSearchQuery(q)
+      setDebouncedQuery(q)
       setPage(1)
     }
   })
@@ -197,7 +201,7 @@ export default function Home() {
 
   const pagedItems = createMemo(() => {
     const all = marketableItems() ?? []
-    const q = searchQuery().trim().toLowerCase()
+    const q = debouncedQuery().trim().toLowerCase()
     const filtered = q
       ? all.filter(id => {
           const name = getItemName(id).toLowerCase()
@@ -213,29 +217,44 @@ export default function Home() {
     return pagedItems().slice(start, start + PAGE_SIZE)
   })
 
-  const [aggData] = createResource(
+  const [aggData, { refetch: refetchAggData }] = createResource(
     () => ({ region: selectedRegion(), items: currentItems() }),
     async ({ region, items }) => {
-      if (!items.length) return new Map<number, AggregatedItemData>()
-      try {
+      const map = new Map<number, AggregatedItemData>()
+      if (items.length) {
         const results = await fetchAggregatedData(region, items.join(','))
-        const map = new Map<number, AggregatedItemData>()
         for (const item of results) {
           map.set(item.itemId, item)
         }
-        return map
-      } catch {
-        return new Map<number, AggregatedItemData>()
       }
+      return { region, map }
     }
   )
 
-  const getItemAgg = (itemId: number) => aggData()?.get(itemId)
+  // 只接受属于当前区域的数据：初次加载/切区域时旧数据失效 → 骨架屏；
+  // 点刷新（同区域 refetch）时旧数据仍有效 → 保留内容，不闪骨架
+  const validAggData = createMemo(() => {
+    const result = aggData()
+    return result && result.region === selectedRegion() ? result.map : null
+  })
+
+  const getItemAgg = (itemId: number) => validAggData()?.get(itemId)
+
+  const handleRefresh = () => {
+    refetchAggData()
+  }
+
+  let searchTimer: number | undefined
+  onCleanup(() => window.clearTimeout(searchTimer))
 
   const setSearch = (value: string) => {
     setSearchQuery(value)
-    setPage(1)
-    setSearchParams(value ? { q: value } : { q: undefined }, { replace: true })
+    window.clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(() => {
+      setDebouncedQuery(value)
+      setPage(1)
+      setSearchParams(value ? { q: value } : { q: undefined }, { replace: true })
+    }, 300)
   }
 
   const handleInput = (e: InputEvent & { currentTarget: HTMLInputElement }) => {
@@ -273,6 +292,7 @@ export default function Home() {
       <PageHeader
         title="市场总览"
         description="浏览 FFXIV 可交易物品的市场行情"
+        actions={<RefreshButton loading={aggData.loading} onClick={handleRefresh} />}
       />
 
       <div class="flex flex-col gap-4 mb-6">
@@ -322,12 +342,34 @@ export default function Home() {
             </div>
           }>
             <Show
+              when={!aggData.error}
+              fallback={
+                <EmptyState
+                  title="市场数据加载失败"
+                  description="当前区域的聚合行情暂时无法获取，请稍后再试"
+                  action={
+                    <RefreshButton loading={aggData.loading} onClick={handleRefresh} />
+                  }
+                />
+              }
+            >
+            <Show
+              when={Boolean(validAggData())}
+              fallback={
+                <div class="px-6 space-y-4">
+                  <For each={Array.from({ length: 10 })}>
+                    {() => <Skeleton class="h-10 w-full" />}
+                  </For>
+                </div>
+              }
+            >
+            <Show
               when={currentItems().length > 0}
               fallback={
                 <Show when={marketableItems()}>
                   <EmptyState
                     title="未找到物品"
-                    description={searchQuery() ? `未找到与 "${searchQuery()}" 匹配的物品` : "该区域暂无市场数据"}
+                    description={debouncedQuery() ? `未找到与 "${debouncedQuery()}" 匹配的物品` : "该区域暂无市场数据"}
                     action={
                       <Show when={searchQuery()}>
                         <button class="text-sm text-primary hover:underline" onClick={() => setSearch('')}>清除搜索</button>
@@ -358,9 +400,9 @@ export default function Home() {
                           if (!d) return null
                           const nqPrice = d.nq.minListingPrice
                           const hqPrice = d.hq.minListingPrice
-                          const nqWorld = d.nq.minListingWorldId ? getWorldDisplayName(d.nq.minListingWorldId) : null
-                          const hqWorld = d.hq.minListingWorldId ? getWorldDisplayName(d.hq.minListingWorldId) : null
-                          return { nqPrice, hqPrice, nqWorld, hqWorld }
+                          const nqWorldId = d.nq.minListingWorldId
+                          const hqWorldId = d.hq.minListingWorldId
+                          return { nqPrice, hqPrice, nqWorldId, hqWorldId }
                         })
 
                         return (
@@ -400,14 +442,14 @@ export default function Home() {
                                     <span class="flex items-center gap-1">
                                       {(minListingInfo()!.hqPrice != null && minListingInfo()!.hqPrice! > 0) && <NqTag />}
                                       <span class="font-medium">{formatGil(minListingInfo()!.nqPrice!)} Gil</span>
-                                      <Show when={minListingInfo()!.nqWorld}><span class="text-xs text-muted-foreground">{minListingInfo()!.nqWorld}</span></Show>
+                                      <Show when={minListingInfo()!.nqWorldId}><WorldBadge worldId={minListingInfo()!.nqWorldId} class="text-xs text-muted-foreground" /></Show>
                                     </span>
                                   </Show>
                                   <Show when={minListingInfo()!.hqPrice != null && minListingInfo()!.hqPrice! > 0}>
                                     <span class="flex items-center gap-1">
                                       {(minListingInfo()!.nqPrice != null && minListingInfo()!.nqPrice! > 0) && <HqTag />}
                                       <span class="font-medium">{formatGil(minListingInfo()!.hqPrice!)} Gil</span>
-                                      <Show when={minListingInfo()!.hqWorld}><span class="text-xs text-muted-foreground">{minListingInfo()!.hqWorld}</span></Show>
+                                      <Show when={minListingInfo()!.hqWorldId}><WorldBadge worldId={minListingInfo()!.hqWorldId} class="text-xs text-muted-foreground" /></Show>
                                     </span>
                                   </Show>
                                   <Show when={!(minListingInfo()!.nqPrice) && !(minListingInfo()!.hqPrice)}>
@@ -453,6 +495,8 @@ export default function Home() {
                   )}
                 </For>
               </div>
+            </Show>
+            </Show>
             </Show>
           </Suspense>
         </div>

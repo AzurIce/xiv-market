@@ -100,7 +100,7 @@ export const SelectContent = <T extends ValidComponent = "div">(
     <SelectPrimitive.Content
       data-slot="select-content"
       class={cx(
-        "bg-background text-foreground relative z-50 min-w-[8rem] max-h-[min(24rem,calc(100vh-6rem))] overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
+        "bg-popover text-popover-foreground overscroll-contain relative z-50 min-w-[8rem] max-h-[min(24rem,calc(100vh-6rem))] overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
         props.class,
       )}
       {...rest}
