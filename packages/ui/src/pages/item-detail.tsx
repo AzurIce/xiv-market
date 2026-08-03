@@ -2,7 +2,7 @@ import { createResource, createMemo, createSignal, createEffect, Show, Suspense,
 import { useParams, A, useSearchParams } from '@solidjs/router'
 import { fetchMarketData, fetchHistoryData, selectedRegion, dataCenters, worlds, getItemName, getItemIconUrl, getDcNameByWorldName, getWorldName, getDcColorHex, baseUrl } from '@xiv-market/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
-import { Badge } from '../badge'
+import { QualityBadge } from '../quality-badge'
 import { Skeleton } from '../skeleton'
 import { Table, TableBody, TableRow, TableHead, TableCell, TableHeader } from '../table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../tabs'
@@ -145,9 +145,17 @@ function formatTime(ts: number): string {
   return d.toLocaleDateString('zh-CN')
 }
 
-// 价格分布的迷你区间条：P25~P75 色带 + P50 中线 + 最低挂单圆点
-function PriceRangeStrip(props: { min?: number; p25: number; p50: number; p75: number }) {
+// 价格分布的迷你区间条：P25~P75 色带 + P50 中线 + 最低挂单圆点。
+// 双条对比时由父级传入共享 domain，保证两条坐标对齐；单条时各自自适应。
+function PriceRangeStrip(props: {
+  min?: number
+  p25: number
+  p50: number
+  p75: number
+  domain?: { lo: number; hi: number }
+}) {
   const domain = createMemo(() => {
+    if (props.domain) return props.domain
     const lo = Math.min(props.min ?? props.p25, props.p25)
     const hi = props.p75
     const span = hi - lo
@@ -1299,19 +1307,31 @@ export default function ItemDetail() {
     const data = marketData()
     if (!data) return null
     const listings = currentListings()
-    const prices = listings
-      .map((listing) => Number(listing.pricePerUnit ?? 0))
-      .filter((price) => Number.isFinite(price) && price > 0)
-      .sort((a, b) => a - b)
-    const minListing = listings
-      .filter((listing) => Number.isFinite(Number(listing.pricePerUnit)) && Number(listing.pricePerUnit) > 0)
-      .slice()
-      .sort((a, b) => {
-        const priceDiff = Number(a.pricePerUnit) - Number(b.pricePerUnit)
-        if (priceDiff !== 0) return priceDiff
-        return Number(a.total ?? 0) - Number(b.total ?? 0)
-      })[0]
-    const minListingWorld = minListing?.worldName || ''
+    const priceOf = (listing: any) => Number(listing.pricePerUnit ?? 0)
+    const isValid = (listing: any) => Number.isFinite(priceOf(listing)) && priceOf(listing) > 0
+    const byPriceAsc = (a: any, b: any) => {
+      const priceDiff = Number(a.pricePerUnit) - Number(b.pricePerUnit)
+      if (priceDiff !== 0) return priceDiff
+      return Number(a.total ?? 0) - Number(b.total ?? 0)
+    }
+    const minListing = listings.filter(isValid).slice().sort(byPriceAsc)[0]
+
+    // NQ/HQ 是两个独立的价格体系，最低挂单与分布都按品质分别统计
+    const minListingOf = (hq: boolean) =>
+      listings.filter((l) => isValid(l) && Boolean(l.hq) === hq).slice().sort(byPriceAsc)[0] ?? null
+    const distOf = (hq: boolean) => {
+      const sorted = listings
+        .filter((l) => isValid(l) && Boolean(l.hq) === hq)
+        .map(priceOf)
+        .sort((a, b) => a - b)
+      if (!sorted.length) return null
+      return {
+        min: sorted[0],
+        p25: percentile(sorted, 0.25),
+        p50: percentile(sorted, 0.5),
+        p75: percentile(sorted, 0.75),
+      }
+    }
 
     return {
       velocity: data.regularSaleVelocity,
@@ -1320,11 +1340,23 @@ export default function ItemDetail() {
       lastUploadTime: data.lastUploadTime,
       listingCount: listings.length,
       minListing,
-      minListingWorld,
-      p25: percentile(prices, 0.25),
-      p50: percentile(prices, 0.5),
-      p75: percentile(prices, 0.75),
+      nqMinListing: minListingOf(false),
+      hqMinListing: minListingOf(true),
+      nqDist: distOf(false),
+      hqDist: distOf(true),
     }
+  })
+
+  // NQ/HQ 双条对比时的共享坐标域，让两条区间条可以上下直观对比
+  const sharedDistDomain = createMemo(() => {
+    const nq = stats()?.nqDist
+    const hq = stats()?.hqDist
+    if (!nq || !hq) return null
+    const lo = Math.min(nq.min, hq.min)
+    const hi = Math.max(nq.p75, hq.p75)
+    const span = hi - lo
+    const pad = span > 0 ? span * 0.25 : Math.max(hi * 0.1, 1)
+    return { lo: lo - pad, hi: hi + pad }
   })
 
   const handleCopyName = () => {
@@ -1545,30 +1577,65 @@ export default function ItemDetail() {
       >
         <Card class="mb-6">
           <CardContent class="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-border">
-            {/* 最低挂单（主信息） */}
+            {/* 最低挂单（主信息）：NQ/HQ 都有挂单时按品质分两行 */}
             <div class="shrink-0 sm:w-44 sm:pr-6">
               <div class="text-xs font-medium text-muted-foreground">最低挂单</div>
               <Show
                 when={stats()?.minListing}
                 fallback={<div class="mt-1.5 text-muted-foreground">-</div>}
               >
-                {(listing) => (
-                  <>
-                    <div class="mt-1.5 flex items-baseline gap-1.5">
-                      <span class="text-2xl font-bold tracking-tight tabular-nums">
-                        {formatGil(listing().pricePerUnit)}
-                      </span>
-                      <span class="text-xs text-muted-foreground">Gil</span>
-                      <Badge variant={listing().hq ? 'default' : 'secondary'}>
-                        {listing().hq ? 'HQ' : 'NQ'}
-                      </Badge>
+                <Show
+                  when={stats()?.nqMinListing && stats()?.hqMinListing}
+                  fallback={
+                    (() => {
+                      const listing = () => (stats()?.nqMinListing ?? stats()?.hqMinListing)!
+                      return (
+                        <>
+                          <div class="mt-1.5 flex items-baseline gap-1.5">
+                            <span class="text-2xl font-bold tracking-tight tabular-nums">
+                              {formatGil(listing().pricePerUnit)}
+                            </span>
+                            <span class="text-xs text-muted-foreground">Gil</span>
+                            <QualityBadge hq={listing().hq} />
+                          </div>
+                          <WorldBadge
+                            class="mt-1.5 text-xs text-muted-foreground"
+                            worldName={listing().worldName || scope()}
+                          />
+                        </>
+                      )
+                    })()
+                  }
+                >
+                  <div class="mt-1.5 space-y-2.5">
+                    <div>
+                      <div class="flex items-baseline gap-1.5">
+                        <QualityBadge hq={false} />
+                        <span class="text-xl font-bold tracking-tight tabular-nums">
+                          {formatGil(stats()!.nqMinListing!.pricePerUnit)}
+                        </span>
+                        <span class="text-xs text-muted-foreground">Gil</span>
+                      </div>
+                      <WorldBadge
+                        class="mt-0.5 text-xs text-muted-foreground"
+                        worldName={stats()!.nqMinListing!.worldName || scope()}
+                      />
                     </div>
-                    <WorldBadge
-                      class="mt-1.5 text-xs text-muted-foreground"
-                      worldName={stats()?.minListingWorld || scope()}
-                    />
-                  </>
-                )}
+                    <div>
+                      <div class="flex items-baseline gap-1.5">
+                        <QualityBadge hq />
+                        <span class="text-xl font-bold tracking-tight tabular-nums">
+                          {formatGil(stats()!.hqMinListing!.pricePerUnit)}
+                        </span>
+                        <span class="text-xs text-muted-foreground">Gil</span>
+                      </div>
+                      <WorldBadge
+                        class="mt-0.5 text-xs text-muted-foreground"
+                        worldName={stats()!.hqMinListing!.worldName || scope()}
+                      />
+                    </div>
+                  </div>
+                </Show>
               </Show>
             </div>
 
@@ -1576,15 +1643,48 @@ export default function ItemDetail() {
             <div class="min-w-0 flex-1 sm:px-6">
               <div class="mb-2.5 text-xs font-medium text-muted-foreground">价格分布</div>
               <Show
-                when={stats()?.p75}
+                when={stats()?.nqDist || stats()?.hqDist}
                 fallback={<div class="text-muted-foreground">-</div>}
               >
-                <PriceRangeStrip
-                  min={Number(stats()?.minListing?.pricePerUnit ?? 0) || undefined}
-                  p25={stats()!.p25}
-                  p50={stats()!.p50}
-                  p75={stats()!.p75}
-                />
+                {/* NQ/HQ 都有时按品质拆成两条，各自独立统计；只有一种品质时单条 */}
+                <Show
+                  when={stats()?.nqDist && stats()?.hqDist}
+                  fallback={
+                    <PriceRangeStrip
+                      min={(stats()?.nqDist ?? stats()?.hqDist)!.min}
+                      p25={(stats()?.nqDist ?? stats()?.hqDist)!.p25}
+                      p50={(stats()?.nqDist ?? stats()?.hqDist)!.p50}
+                      p75={(stats()?.nqDist ?? stats()?.hqDist)!.p75}
+                    />
+                  }
+                >
+                  <div class="space-y-3">
+                    <div class="flex items-center gap-2">
+                      <QualityBadge hq={false} class="shrink-0" />
+                      <div class="min-w-0 flex-1">
+                        <PriceRangeStrip
+                          min={stats()!.nqDist!.min}
+                          p25={stats()!.nqDist!.p25}
+                          p50={stats()!.nqDist!.p50}
+                          p75={stats()!.nqDist!.p75}
+                          domain={sharedDistDomain()!}
+                        />
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <QualityBadge hq class="shrink-0" />
+                      <div class="min-w-0 flex-1">
+                        <PriceRangeStrip
+                          min={stats()!.hqDist!.min}
+                          p25={stats()!.hqDist!.p25}
+                          p50={stats()!.hqDist!.p50}
+                          p75={stats()!.hqDist!.p75}
+                          domain={sharedDistDomain()!}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </Show>
               </Show>
             </div>
 
@@ -1592,16 +1692,16 @@ export default function ItemDetail() {
             <div class="flex shrink-0 gap-8 sm:flex-col sm:gap-3 sm:pl-6">
               <div>
                 <div class="text-xs font-medium text-muted-foreground">日销量</div>
-                <div class="mt-1 space-y-0.5 text-sm tabular-nums">
+                <div class="mt-1 space-y-1 text-sm tabular-nums">
                   <Show when={stats()?.nqVelocity != null && stats()!.nqVelocity > 0}>
-                    <div>
-                      <span class="text-xs text-muted-foreground">NQ </span>
+                    <div class="flex items-center gap-1.5">
+                      <QualityBadge hq={false} />
                       <span class="font-medium">{formatDailySales(stats()!.nqVelocity)}</span>
                     </div>
                   </Show>
                   <Show when={stats()?.hqVelocity != null && stats()!.hqVelocity > 0}>
-                    <div>
-                      <span class="text-xs text-muted-foreground">HQ </span>
+                    <div class="flex items-center gap-1.5">
+                      <QualityBadge hq />
                       <span class="font-medium">{formatDailySales(stats()!.hqVelocity)}</span>
                     </div>
                   </Show>
@@ -1722,9 +1822,7 @@ export default function ItemDetail() {
                           {(listing) => (
                             <TableRow>
                               <TableCell>
-                                <Badge variant={listing.hq ? 'default' : 'secondary'}>
-                                  {listing.hq ? 'HQ' : 'NQ'}
-                                </Badge>
+                                <QualityBadge hq={listing.hq} />
                               </TableCell>
                               <TableCell class="font-medium">
                                 {formatGil(listing.pricePerUnit)} Gil
@@ -1795,9 +1893,7 @@ export default function ItemDetail() {
                           {(sale) => (
                             <TableRow>
                               <TableCell>
-                                <Badge variant={sale.hq ? 'default' : 'secondary'}>
-                                  {sale.hq ? 'HQ' : 'NQ'}
-                                </Badge>
+                                <QualityBadge hq={sale.hq} />
                               </TableCell>
                               <TableCell class="font-medium">
                                 {formatGil(sale.pricePerUnit)} Gil

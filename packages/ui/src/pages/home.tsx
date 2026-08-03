@@ -7,6 +7,7 @@ import {
   type AggregatedItemData,
 } from '@xiv-market/shared'
 import { Card, CardContent } from '../card'
+import { QualityBadge } from '../quality-badge'
 import { Input } from '../input'
 import { Skeleton } from '../skeleton'
 import { Table, TableBody, TableRow, TableHead, TableCell, TableHeader } from '../table'
@@ -35,12 +36,13 @@ function formatTime(ts: number): string {
   return d.toLocaleDateString('zh-CN')
 }
 
+// NQ/HQ 标签统一走共享 QualityBadge（HQ=琥珀黄、NQ=secondary 灰）
 function HqTag() {
-  return <span class="inline-flex items-center rounded px-1 py-px text-xs font-semibold leading-none bg-[#fef3c7] text-[#92400e] border border-[#fde68a]">HQ</span>
+  return <QualityBadge hq class="px-1 py-px leading-none" />
 }
 
 function NqTag() {
-  return <span class="inline-flex items-center rounded px-1 py-px text-xs font-medium leading-none bg-muted text-muted-foreground border border-border">NQ</span>
+  return <QualityBadge hq={false} class="px-1 py-px leading-none" />
 }
 
 function PriceNqHq(props: { nq?: number; hq?: number }) {
@@ -161,10 +163,10 @@ function MobileItemCard(props: {
         <div class="flex justify-between items-center text-[10px] text-muted-foreground pt-1 border-t border-border/40">
           <div class="flex items-center gap-1.5">
             <Show when={nqVelocity() > 0}>
-              <span>NQ {nqVelocity().toFixed(2)}/天</span>
+              <span class="flex items-center gap-1"><NqTag />{nqVelocity().toFixed(2)}/天</span>
             </Show>
             <Show when={hqVelocity() > 0}>
-              <span>HQ {hqVelocity().toFixed(2)}/天</span>
+              <span class="flex items-center gap-1"><HqTag />{hqVelocity().toFixed(2)}/天</span>
             </Show>
             <Show when={nqVelocity() === 0 && hqVelocity() === 0}>
               <span>-</span>
