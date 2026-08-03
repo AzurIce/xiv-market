@@ -4,6 +4,7 @@ import { baseUrl } from './utils'
 export interface ItemInfo {
   name: string
   icon: number
+  canBeHq: boolean
 }
 
 export interface ItemsVersionInfo {
@@ -15,7 +16,7 @@ export interface ItemsVersionInfo {
 declare const __BUILD_COMMIT__: string
 declare const __BUILD_DATE__: string
 
-type LegacyItemsPayload = Record<string, ItemInfo>
+type LegacyItemsPayload = Record<string, { name: string; icon: number; canBeHq?: boolean }>
 
 let itemsCache = new Map<number, ItemInfo>()
 let itemsLoaded = false
@@ -40,7 +41,7 @@ function normalizeItems(payload: LegacyItemsPayload): Map<number, ItemInfo> {
   for (const [id, info] of Object.entries(payload)) {
     const itemId = Number(id)
     if (itemId && info?.name) {
-      map.set(itemId, { name: info.name, icon: Number(info.icon ?? 0) })
+      map.set(itemId, { name: info.name, icon: Number(info.icon ?? 0), canBeHq: info.canBeHq === true })
     }
   }
   return map
@@ -96,6 +97,12 @@ export function getAllItems(): { id: number; name: string; icon: number }[] {
 export function getItemName(itemId: number): string {
   trackItems()
   return itemsCache.get(itemId)?.name ?? `物品 #${itemId}`
+}
+
+// 物品是否可 HQ。物品未加载/不存在时默认 true（不过滤），
+// 避免 items.json 缺失时误伤正常 HQ 物品的数据展示。
+export function canItemBeHq(itemId: number): boolean {
+  return itemsCache.get(itemId)?.canBeHq ?? true
 }
 
 export function getIconUrl(iconId: number): string[] {

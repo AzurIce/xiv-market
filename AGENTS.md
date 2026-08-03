@@ -108,11 +108,12 @@ app/
 
 ## 物品数据
 
-- 物品中文名/图标映射来自 [thewakingsands/ffxiv-datamining-cn](https://github.com/thewakingsands/ffxiv-datamining-cn) 的 `Item.csv`
+- 物品中文名/图标/是否可 HQ（`canBeHq`，仅 true 时输出）映射来自 [thewakingsands/ffxiv-datamining-cn](https://github.com/thewakingsands/ffxiv-datamining-cn) 的 `Item.csv`
 - 图标 URL 格式：`https://www.garlandtools.org/files/icons/item/t/{icon_id}.png`
 - 物品数据随构建产物部署（`public/items.json`），运行时通过 `fetch('/items.json')` 加载
 - commit hash 在构建时注入 JS bundle（`vite.config.ts` → `define`）
 - 物品名/图标查询：`@xiv-market/shared` — `getItemName(id)` / `getItemIconUrl(id)` / `getIconUrl(iconId)`
+- 不可 HQ 判断：`canItemBeHq(id)`；Universalis 存在把不可 HQ 物品（如水晶）上报出 HQ 统计的脏数据，`fetchAggregatedData` 会据此丢弃 hq 块
 
 ## 组件开发规范
 

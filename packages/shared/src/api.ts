@@ -1,4 +1,5 @@
 import type { DataCenter, World, MarketData, HistoryData, AggregatedItemData } from './types'
+import { canItemBeHq } from './items'
 
 const BASE_URL = import.meta.env?.DEV ? '/api/universalis' : 'https://universalis.app'
 
@@ -89,15 +90,19 @@ export async function fetchAggregatedData(
       averageSalePrice: item.nq?.averageSalePrice?.[scopeKey]?.price,
       dailySaleVelocity: item.nq?.dailySaleVelocity?.[scopeKey]?.quantity,
     },
-    hq: {
-      minListingPrice: item.hq?.minListing?.[scopeKey]?.price,
-      minListingWorldId: item.hq?.minListing?.[scopeKey]?.worldId,
-      recentPurchasePrice: item.hq?.recentPurchase?.[scopeKey]?.price,
-      recentPurchaseTimestamp: item.hq?.recentPurchase?.[scopeKey]?.timestamp,
-      recentPurchaseWorldId: item.hq?.recentPurchase?.[scopeKey]?.worldId,
-      averageSalePrice: item.hq?.averageSalePrice?.[scopeKey]?.price,
-      dailySaleVelocity: item.hq?.dailySaleVelocity?.[scopeKey]?.quantity,
-    },
+    // Universalis 存在上传端脏数据：不可 HQ 的物品（如水晶）也可能带 hq 统计，
+    // 这里直接丢弃，避免展示不可能的 HQ 均价/销量
+    hq: canItemBeHq(item.itemId)
+      ? {
+          minListingPrice: item.hq?.minListing?.[scopeKey]?.price,
+          minListingWorldId: item.hq?.minListing?.[scopeKey]?.worldId,
+          recentPurchasePrice: item.hq?.recentPurchase?.[scopeKey]?.price,
+          recentPurchaseTimestamp: item.hq?.recentPurchase?.[scopeKey]?.timestamp,
+          recentPurchaseWorldId: item.hq?.recentPurchase?.[scopeKey]?.worldId,
+          averageSalePrice: item.hq?.averageSalePrice?.[scopeKey]?.price,
+          dailySaleVelocity: item.hq?.dailySaleVelocity?.[scopeKey]?.quantity,
+        }
+      : {},
     lastUploadTime: item.worldUploadTimes?.[0]?.timestamp,
   }))
   return results

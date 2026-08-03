@@ -10,6 +10,7 @@ interface ItemRow {
   id: number
   name: string
   icon: number
+  canBeHq: boolean
 }
 
 function stringifyReadableItems(items: ItemRow[]): string {
@@ -17,7 +18,9 @@ function stringifyReadableItems(items: ItemRow[]): string {
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const comma = i === items.length - 1 ? '' : ','
-    lines.push(`  ${JSON.stringify(String(item.id))}: { "name": ${JSON.stringify(item.name)}, "icon": ${item.icon} }${comma}`)
+    // canBeHq 仅在 true 时输出以控制文件体积，读取侧缺失即视为 false
+    const hq = item.canBeHq ? ', "canBeHq": true' : ''
+    lines.push(`  ${JSON.stringify(String(item.id))}: { "name": ${JSON.stringify(item.name)}, "icon": ${item.icon}${hq} }${comma}`)
   }
   lines.push('}')
   return lines.join('\n')
@@ -97,8 +100,8 @@ async function main() {
   for (let i = 3; i < lines.length; i++) {
     const f = parseCsvLine(lines[i].trim())
     if (!f[0]) continue
-    const id = +f[0], name = f[10], icon = +f[11]
-    if (id && name) items.push({ id, name, icon })
+    const id = +f[0], name = f[10], icon = +f[11], canBeHq = f[28] === 'True'
+    if (id && name) items.push({ id, name, icon, canBeHq })
   }
   console.log(`Parsed ${items.length} items`)
 
