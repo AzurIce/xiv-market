@@ -165,46 +165,160 @@ function PriceRangeStrip(props: {
   const pct = (v: number) =>
     Math.min(100, Math.max(0, ((v - domain().lo) / (domain().hi - domain().lo)) * 100))
 
-  const ticks = createMemo(() => [
-    { label: 'P25', value: props.p25, left: pct(props.p25) },
-    { label: 'P75', value: props.p75, left: pct(props.p75) },
-  ])
-
-  // 标签横向避让：靠近左/右边缘时改为贴边对齐，避免溢出容器
-  const anchorStyle = (left: number) => ({
-    left: `${left}%`,
-    transform: left <= 4 ? 'translateX(0)' : left >= 96 ? 'translateX(-100%)' : 'translateX(-50%)',
+  // 标签避让在像素空间进行：百分比阈值在窄条（移动端）下不足以容纳文字会相撞，
+  // 在宽条下又会把标签无谓地钉到边缘。量出容器实际宽度后做最小位移去重叠
+  let rootRef!: HTMLDivElement
+  const [stripWidth, setStripWidth] = createSignal(0)
+  onMount(() => {
+    const observer = new ResizeObserver((entries) => setStripWidth(entries[0].contentRect.width))
+    observer.observe(rootRef)
+    onCleanup(() => observer.disconnect())
   })
 
+  // 估算标签像素宽度：标签/数值两行取宽者；CJK ≈ 1em，其余 ≈ 0.6em，外加 4px 余量
+  const estimateWidth = (label: string, value: string) => {
+    const line = (s: string, fontSize: number) => {
+      let w = 0
+      for (const ch of s) w += (ch.codePointAt(0) ?? 0) > 0x2e7f ? fontSize : fontSize * 0.6
+      return w
+    }
+    return Math.ceil(Math.max(line(label, 9), line(value, 10))) + 4
+  }
+
+  const px = (v: number) => (pct(v) / 100) * stripWidth()
+  const clampCenter = (center: number, w: number) => {
+    if (stripWidth() <= w) return stripWidth() / 2
+    return Math.min(Math.max(center, w / 2), stripWidth() - w / 2)
+  }
+  // 左右相邻两标签（a 恒在 b 左侧）去重叠：优先各自贴合理想位置，
+  // 间距不足时绕中点向两侧推开，再整体收进容器
+  const placePair = (a: { x: number; w: number }, b: { x: number; w: number }, gap = 6): [number, number] => {
+    const need = (a.w + b.w) / 2 + gap
+    let ca = clampCenter(a.x, a.w)
+    let cb = clampCenter(b.x, b.w)
+    if (cb - ca < need) {
+      const mid = (ca + cb) / 2
+      const shift =
+        Math.max(0, a.w / 2 - (mid - need / 2)) - Math.max(0, mid + need / 2 + b.w / 2 - stripWidth())
+      ca = clampCenter(mid - need / 2 + shift, a.w)
+      cb = clampCenter(mid + need / 2 + shift, b.w)
+    }
+    return [ca, cb]
+  }
+
+  type StripLabel = {
+    label: string
+    value: string
+    center: number
+    idealPct: number
+    labelClass: string
+    valueClass: string
+  }
+
+  // 顶部标签：最低挂单 + P50。最低恒在 P50 左侧（最低价 ≤ 中位价），
+  // 距离过近时向两侧推开——只移位、不省略
+  const topLabels = createMemo((): StripLabel[] => {
+    const p50 = {
+      label: 'P50',
+      value: formatAxisGil(props.p50),
+      idealPct: pct(props.p50),
+      labelClass: 'text-[9px] text-amber-500',
+      valueClass: 'text-[10px] font-semibold text-amber-500',
+    }
+    if (props.min == null || props.min <= 0) {
+      return [{ ...p50, center: clampCenter(px(props.p50), estimateWidth(p50.label, p50.value)) }]
+    }
+    const min = {
+      label: '最低',
+      value: formatAxisGil(props.min),
+      idealPct: pct(props.min),
+      labelClass: 'text-[9px] text-muted-foreground',
+      valueClass: 'text-[10px] font-semibold text-foreground',
+    }
+    const [cm, cp] = placePair(
+      { x: px(props.min), w: estimateWidth(min.label, min.value) },
+      { x: px(props.p50), w: estimateWidth(p50.label, p50.value) },
+    )
+    // min 后渲染，极端窄条放不下两个标签时盖住 P50（最低价更重要）
+    return [
+      { ...p50, center: cp },
+      { ...min, center: cm },
+    ]
+  })
+
+  // 底部标签：P25、P75。理想位置放得下就各自标注在色带两端；放不下则合并为
+  // 一个居中标签——P25 与 P75 相等时标明 P25=P75，避免单个数字看起来像漏渲染
+  const bottomLabels = createMemo((): StripLabel[] => {
+    const tickClass = {
+      labelClass: 'text-[9px] text-muted-foreground',
+      valueClass: 'text-[10px] text-muted-foreground',
+    }
+    const p25v = formatAxisGil(props.p25)
+    const p75v = formatAxisGil(props.p75)
+    const x25 = px(props.p25)
+    const x75 = px(props.p75)
+    // 未测量到宽度时的首帧兜底：沿用 10% 阈值
+    const fits =
+      stripWidth() > 0
+        ? x75 - x25 >= (estimateWidth('P25', p25v) + estimateWidth('P75', p75v)) / 2 + 6
+        : Math.abs(pct(props.p75) - pct(props.p25)) >= 10
+    if (fits) {
+      const [c25, c75] = placePair(
+        { x: x25, w: estimateWidth('P25', p25v) },
+        { x: x75, w: estimateWidth('P75', p75v) },
+      )
+      return [
+        { label: 'P25', value: p25v, center: c25, idealPct: pct(props.p25), ...tickClass },
+        { label: 'P75', value: p75v, center: c75, idealPct: pct(props.p75), ...tickClass },
+      ]
+    }
+    const equal = props.p25 === props.p75
+    const label = equal ? 'P25=P75' : 'P25~P75'
+    const value = equal ? p25v : `${p25v}~${p75v}`
+    const idealPct = (pct(props.p25) + pct(props.p75)) / 2
+    return [
+      { label, value, center: clampCenter((x25 + x75) / 2, estimateWidth(label, value)), idealPct, ...tickClass },
+    ]
+  })
+
+  // 未测量到宽度时的首帧兜底：按理想百分比 + 边缘锚定落位
+  const labelStyle = (l: StripLabel) =>
+    stripWidth() > 0
+      ? { left: `${l.center}px`, transform: 'translateX(-50%)' }
+      : {
+          left: `${l.idealPct}%`,
+          transform:
+            l.idealPct <= 4 ? 'translateX(0)' : l.idealPct >= 96 ? 'translateX(-100%)' : 'translateX(-50%)',
+        }
+
   return (
-    <div>
-      {/* P50 标签放在条的上方，避免与下方 P25/P75 标签重叠 */}
+    <div ref={rootRef}>
+      {/* P50 与最低挂单的标签放在条的上方，避免与下方 P25/P75 标签重叠 */}
       <div class="relative mb-1.5 h-6">
-        <span
-          class="absolute top-0 flex flex-col items-center gap-0.5 whitespace-nowrap leading-none tabular-nums"
-          style={anchorStyle(pct(props.p50))}
-        >
-          <span class="text-[9px] text-amber-500">P50</span>
-          <span class="text-[10px] font-semibold text-amber-500">{formatAxisGil(props.p50)}</span>
-        </span>
-        {/* 最低挂单价格：与 P50 距离过近时（分布退化）省略，避免标签相撞 */}
-        <Show when={props.min != null && props.min > 0 && Math.abs(pct(props.min!) - pct(props.p50)) > 12}>
-          <span
-            class="absolute top-0 flex flex-col items-center gap-0.5 whitespace-nowrap leading-none tabular-nums"
-            style={anchorStyle(pct(props.min!))}
-          >
-            <span class="text-[9px] text-muted-foreground">最低</span>
-            <span class="text-[10px] font-semibold text-foreground">{formatAxisGil(props.min!)}</span>
-          </span>
-        </Show>
+        <For each={topLabels()}>
+          {(l) => (
+            <span
+              class="absolute top-0 flex flex-col items-center gap-0.5 whitespace-nowrap leading-none tabular-nums"
+              style={labelStyle(l)}
+            >
+              <span class={l.labelClass}>{l.label}</span>
+              <span class={l.valueClass}>{l.value}</span>
+            </span>
+          )}
+        </For>
       </div>
       <div class="relative h-1.5 rounded-full bg-muted">
+        {/* P25=P75 时区间退化为一个点，渲染成细线而非假装有宽度 */}
         <div
-          class="absolute inset-y-0 rounded-full bg-primary/20"
-          style={{
-            left: `${pct(props.p25)}%`,
-            width: `${Math.max(pct(props.p75) - pct(props.p25), 1.5)}%`,
-          }}
+          class="absolute inset-y-0 rounded-full bg-primary/30"
+          style={
+            props.p25 === props.p75
+              ? { left: `calc(${pct(props.p25)}% - 1px)`, width: '2px' }
+              : {
+                  left: `${pct(props.p25)}%`,
+                  width: `${Math.max(pct(props.p75) - pct(props.p25), 2)}%`,
+                }
+          }
         />
         <div
           class="absolute -inset-y-[3px] w-0.5 rounded-full bg-amber-500"
@@ -219,14 +333,14 @@ function PriceRangeStrip(props: {
         </Show>
       </div>
       <div class="relative mt-1.5 h-6">
-        <For each={ticks()}>
-          {(tick) => (
+        <For each={bottomLabels()}>
+          {(l) => (
             <span
               class="absolute top-0 flex flex-col items-center gap-0.5 whitespace-nowrap leading-none tabular-nums"
-              style={anchorStyle(tick.left)}
+              style={labelStyle(l)}
             >
-              <span class="text-[9px] text-muted-foreground">{tick.label}</span>
-              <span class="text-[10px] text-muted-foreground">{formatAxisGil(tick.value)}</span>
+              <span class={l.labelClass}>{l.label}</span>
+              <span class={l.valueClass}>{l.value}</span>
             </span>
           )}
         </For>
@@ -547,7 +661,7 @@ function ServerListingViolin(props: { listings: any[]; scope: string }) {
   )
 }
 
-function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: string }) {
+function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: string; historyLoading: boolean }) {
   const [hideOutliers, setHideOutliers] = createSignal(true)
 
   const serverData = createMemo(() => {
@@ -833,10 +947,13 @@ function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: 
                 </span>
                 <span
                   class="inline-flex items-center justify-end gap-1 text-right tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5"
-                  title={`最近 7 天 ${formatDailySales(item.dailySales)}，前 7 天 ${formatDailySales(item.previousDailySales)}`}
+                  title={props.historyLoading ? undefined : `最近 7 天 ${formatDailySales(item.dailySales)}，前 7 天 ${formatDailySales(item.previousDailySales)}`}
                 >
-                  <span>{formatDailySales(item.dailySales)}</span>
-                  <SalesTrendIcon trend={item.salesTrend} />
+                  {/* 销量由 history 接口计算，未就绪前显示骨架而非 "-"，避免被误读为无数据 */}
+                  <Show when={!props.historyLoading} fallback={<Skeleton class="h-3 w-10" />}>
+                    <span>{formatDailySales(item.dailySales)}</span>
+                    <SalesTrendIcon trend={item.salesTrend} />
+                  </Show>
                 </span>
                 <span class="text-right whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5" title={item.lastReviewTime ? new Date(item.lastReviewTime).toLocaleString('zh-CN') : undefined}>
                   {formatTime(item.lastReviewTime)}
@@ -1314,7 +1431,6 @@ export default function ItemDetail() {
       if (priceDiff !== 0) return priceDiff
       return Number(a.total ?? 0) - Number(b.total ?? 0)
     }
-    const minListing = listings.filter(isValid).slice().sort(byPriceAsc)[0]
 
     // NQ/HQ 是两个独立的价格体系，最低挂单与分布都按品质分别统计
     const minListingOf = (hq: boolean) =>
@@ -1339,7 +1455,6 @@ export default function ItemDetail() {
       hqVelocity: data.hqSaleVelocity,
       lastUploadTime: data.lastUploadTime,
       listingCount: listings.length,
-      minListing,
       nqMinListing: minListingOf(false),
       hqMinListing: minListingOf(true),
       nqDist: distOf(false),
@@ -1358,6 +1473,121 @@ export default function ItemDetail() {
     const pad = span > 0 ? span * 0.25 : Math.max(hi * 0.1, 1)
     return { lo: lo - pad, hi: hi + pad }
   })
+
+  // NQ/HQ 品质筛选：仅双品质物品显示切换；默认 HQ（无 HQ 数据时兜底 NQ），
+  // 用户手动切换后不再自动改动。统计卡保持双品质对比（未选中的淡化），
+  // 下方图表/表格按所选品质过滤。
+  const [qualityFilter, setQualityFilter] = createSignal<'nq' | 'hq'>('hq')
+  let qualityTouched = false
+  const bothQualities = createMemo(() => Boolean(stats()?.nqDist && stats()?.hqDist))
+  createEffect(() => {
+    if (qualityTouched) return
+    const s = stats()
+    if (!s) return
+    setQualityFilter(s.hqDist ? 'hq' : 'nq')
+  })
+  const handleQualityChange = (q: 'nq' | 'hq') => {
+    qualityTouched = true
+    setQualityFilter(q)
+  }
+  const filteredListings = createMemo(() => {
+    const listings = currentListings()
+    if (!bothQualities()) return listings
+    const wantHq = qualityFilter() === 'hq'
+    return listings.filter((l) => Boolean(l.hq) === wantHq)
+  })
+  const filteredHistory = createMemo(() => {
+    const entries = history()
+    if (!bothQualities()) return entries
+    const wantHq = qualityFilter() === 'hq'
+    return entries.filter((e) => Boolean(e.hq) === wantHq)
+  })
+  // 统计卡中未选中品质的行淡化
+  const qualityRowClass = (q: 'nq' | 'hq') =>
+    'transition-opacity ' + (qualityFilter() === q ? '' : 'opacity-40')
+
+  // 品质行：badge + 最低挂单 + 价格分布条，双品质时整行可点击选择
+  const QualityRow = (props: {
+    hq: boolean
+    dist: { min: number; p25: number; p50: number; p75: number }
+    minListing: any
+    selectable: boolean
+  }) => {
+    const selected = () => qualityFilter() === (props.hq ? 'hq' : 'nq')
+    return (
+      <button
+        type="button"
+        disabled={!props.selectable}
+        aria-pressed={props.selectable ? selected() : undefined}
+        onClick={() => props.selectable && handleQualityChange(props.hq ? 'hq' : 'nq')}
+        class={
+          'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-all ' +
+          (props.selectable
+            ? 'cursor-pointer hover:bg-accent/60 ' + (selected() ? '' : 'opacity-40')
+            : 'cursor-default')
+        }
+      >
+        <QualityBadge hq={props.hq} class="shrink-0" />
+        <div class="w-32 shrink-0">
+          <Show when={props.minListing} fallback={<span class="text-muted-foreground">-</span>}>
+            <div class="flex items-baseline gap-1">
+              <span class="text-lg font-bold tracking-tight tabular-nums">
+                {formatGil(Number(props.minListing.pricePerUnit))}
+              </span>
+              <span class="text-xs text-muted-foreground">Gil</span>
+            </div>
+            <WorldBadge
+              class="text-[10px] text-muted-foreground"
+              worldName={props.minListing.worldName || scope()}
+            />
+          </Show>
+        </div>
+        <div class="min-w-0 flex-1">
+          <PriceRangeStrip
+            min={props.dist.min}
+            p25={props.dist.p25}
+            p50={props.dist.p50}
+            p75={props.dist.p75}
+            domain={sharedDistDomain() ?? undefined}
+          />
+        </div>
+      </button>
+    )
+  }
+
+  const qualityToggle = () => (
+    <Show when={bothQualities()}>
+      {/* 两态切换：点击整个区域即翻到另一品质 */}
+      <button
+        type="button"
+        class="inline-flex cursor-pointer items-center rounded-md border border-input bg-background p-0.5 text-xs font-medium"
+        aria-label="切换 NQ/HQ 品质筛选"
+        title="切换 NQ/HQ 品质筛选"
+        onClick={() => handleQualityChange(qualityFilter() === 'hq' ? 'nq' : 'hq')}
+      >
+        <span
+          class={
+            'rounded px-1.5 py-0.5 transition-colors ' +
+            (qualityFilter() === 'nq'
+              ? 'bg-secondary text-secondary-foreground'
+              : 'text-muted-foreground')
+          }
+        >
+          NQ
+        </span>
+        <span
+          class={
+            'rounded px-1.5 py-0.5 transition-colors ' +
+            (qualityFilter() === 'hq'
+              ? 'bg-amber-100 text-amber-800'
+              : 'text-muted-foreground')
+          }
+        >
+          HQ
+        </span>
+      </button>
+    </Show>
+  )
 
   const handleCopyName = () => {
     const name = getItemName(Number(itemId()))
@@ -1507,8 +1737,9 @@ export default function ItemDetail() {
               </Show>
             </div>
 
-            {/* 数据范围选择器 + 刷新按钮 - 桌面端 */}
+            {/* 数据范围选择器 + 品质筛选 + 刷新按钮 - 桌面端 */}
             <div class="hidden sm:flex items-center gap-1.5 flex-shrink-0">
+              {qualityToggle()}
               <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
               <RefreshButton
                 loading={marketDataResult.loading || historyDataResult.loading}
@@ -1527,8 +1758,9 @@ export default function ItemDetail() {
           >
             <span class="text-sm text-muted-foreground">#{itemId()}</span>
             <div class="flex-1" />
-            {/* 移动端 ScopeSelect + 刷新按钮 */}
+            {/* 移动端 ScopeSelect + 品质筛选 + 刷新按钮 */}
             <div class="sm:hidden flex items-center gap-1.5">
+              {qualityToggle()}
               <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
               <RefreshButton
                 loading={marketDataResult.loading || historyDataResult.loading}
@@ -1558,13 +1790,17 @@ export default function ItemDetail() {
           >
             <Card class="mb-6">
               <CardContent class="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-border">
-                <div class="shrink-0 space-y-1.5 sm:w-44 sm:pr-6">
-                  <Skeleton class="h-3 w-14" />
-                  <Skeleton class="h-8 w-24" />
-                </div>
-                <div class="min-w-0 flex-1 space-y-2.5 sm:px-6">
-                  <Skeleton class="h-3 w-14" />
-                  <Skeleton class="h-1.5 w-full" />
+                <div class="min-w-0 flex-1 space-y-3 sm:pr-6">
+                  <Skeleton class="h-3 w-28 px-2" />
+                  <For each={Array.from({ length: 2 })}>
+                    {() => (
+                      <div class="flex items-center gap-3 px-2">
+                        <Skeleton class="h-5 w-8" />
+                        <Skeleton class="h-8 w-24" />
+                        <Skeleton class="h-1.5 flex-1" />
+                      </div>
+                    )}
+                  </For>
                 </div>
                 <div class="flex shrink-0 gap-8 sm:flex-col sm:gap-3 sm:pl-6">
                   <div class="space-y-1.5"><Skeleton class="h-3 w-14" /><Skeleton class="h-5 w-20" /></div>
@@ -1577,114 +1813,37 @@ export default function ItemDetail() {
       >
         <Card class="mb-6">
           <CardContent class="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-border">
-            {/* 最低挂单（主信息）：NQ/HQ 都有挂单时按品质分两行 */}
-            <div class="shrink-0 sm:w-44 sm:pr-6">
-              <div class="text-xs font-medium text-muted-foreground">最低挂单</div>
-              <Show
-                when={stats()?.minListing}
-                fallback={<div class="mt-1.5 text-muted-foreground">-</div>}
-              >
-                <Show
-                  when={stats()?.nqMinListing && stats()?.hqMinListing}
-                  fallback={
-                    (() => {
-                      const listing = () => (stats()?.nqMinListing ?? stats()?.hqMinListing)!
-                      return (
-                        <>
-                          <div class="mt-1.5 flex items-baseline gap-1.5">
-                            <span class="text-2xl font-bold tracking-tight tabular-nums">
-                              {formatGil(listing().pricePerUnit)}
-                            </span>
-                            <span class="text-xs text-muted-foreground">Gil</span>
-                            <QualityBadge hq={listing().hq} />
-                          </div>
-                          <WorldBadge
-                            class="mt-1.5 text-xs text-muted-foreground"
-                            worldName={listing().worldName || scope()}
-                          />
-                        </>
-                      )
-                    })()
-                  }
-                >
-                  <div class="mt-1.5 space-y-2.5">
-                    <div>
-                      <div class="flex items-baseline gap-1.5">
-                        <QualityBadge hq={false} />
-                        <span class="text-xl font-bold tracking-tight tabular-nums">
-                          {formatGil(stats()!.nqMinListing!.pricePerUnit)}
-                        </span>
-                        <span class="text-xs text-muted-foreground">Gil</span>
-                      </div>
-                      <WorldBadge
-                        class="mt-0.5 text-xs text-muted-foreground"
-                        worldName={stats()!.nqMinListing!.worldName || scope()}
-                      />
-                    </div>
-                    <div>
-                      <div class="flex items-baseline gap-1.5">
-                        <QualityBadge hq />
-                        <span class="text-xl font-bold tracking-tight tabular-nums">
-                          {formatGil(stats()!.hqMinListing!.pricePerUnit)}
-                        </span>
-                        <span class="text-xs text-muted-foreground">Gil</span>
-                      </div>
-                      <WorldBadge
-                        class="mt-0.5 text-xs text-muted-foreground"
-                        worldName={stats()!.hqMinListing!.worldName || scope()}
-                      />
-                    </div>
-                  </div>
-                </Show>
-              </Show>
-            </div>
-
-            {/* 价格分布（区间条，占满剩余宽度） */}
-            <div class="min-w-0 flex-1 sm:px-6">
-              <div class="mb-2.5 text-xs font-medium text-muted-foreground">价格分布</div>
+            {/* 最低挂单 + 价格分布：每个品质一行，双品质时整行可点击选择 */}
+            <div class="min-w-0 flex-1 sm:pr-6">
               <Show
                 when={stats()?.nqDist || stats()?.hqDist}
                 fallback={<div class="text-muted-foreground">-</div>}
               >
-                {/* NQ/HQ 都有时按品质拆成两条，各自独立统计；只有一种品质时单条 */}
-                <Show
-                  when={stats()?.nqDist && stats()?.hqDist}
-                  fallback={
-                    <PriceRangeStrip
-                      min={(stats()?.nqDist ?? stats()?.hqDist)!.min}
-                      p25={(stats()?.nqDist ?? stats()?.hqDist)!.p25}
-                      p50={(stats()?.nqDist ?? stats()?.hqDist)!.p50}
-                      p75={(stats()?.nqDist ?? stats()?.hqDist)!.p75}
-                    />
-                  }
-                >
-                  <div class="space-y-3">
-                    <div class="flex items-center gap-2">
-                      <QualityBadge hq={false} class="shrink-0" />
-                      <div class="min-w-0 flex-1">
-                        <PriceRangeStrip
-                          min={stats()!.nqDist!.min}
-                          p25={stats()!.nqDist!.p25}
-                          p50={stats()!.nqDist!.p50}
-                          p75={stats()!.nqDist!.p75}
-                          domain={sharedDistDomain()!}
-                        />
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <QualityBadge hq class="shrink-0" />
-                      <div class="min-w-0 flex-1">
-                        <PriceRangeStrip
-                          min={stats()!.hqDist!.min}
-                          p25={stats()!.hqDist!.p25}
-                          p50={stats()!.hqDist!.p50}
-                          p75={stats()!.hqDist!.p75}
-                          domain={sharedDistDomain()!}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </Show>
+                <div class="mb-1 px-2 text-xs font-medium text-muted-foreground">
+                  最低挂单 · 价格分布
+                </div>
+                <div class="space-y-1">
+                  <Show when={stats()?.nqDist}>
+                    {(dist) => (
+                      <QualityRow
+                        hq={false}
+                        dist={dist()}
+                        minListing={stats()!.nqMinListing}
+                        selectable={bothQualities()}
+                      />
+                    )}
+                  </Show>
+                  <Show when={stats()?.hqDist}>
+                    {(dist) => (
+                      <QualityRow
+                        hq
+                        dist={dist()}
+                        minListing={stats()!.hqMinListing}
+                        selectable={bothQualities()}
+                      />
+                    )}
+                  </Show>
+                </div>
               </Show>
             </div>
 
@@ -1694,19 +1853,27 @@ export default function ItemDetail() {
                 <div class="text-xs font-medium text-muted-foreground">日销量</div>
                 <div class="mt-1 space-y-1 text-sm tabular-nums">
                   <Show when={stats()?.nqVelocity != null && stats()!.nqVelocity > 0}>
-                    <div class="flex items-center gap-1.5">
+                    <div class={'flex items-center gap-1.5 ' + (bothQualities() ? qualityRowClass('nq') : '')}>
                       <QualityBadge hq={false} />
                       <span class="font-medium">{formatDailySales(stats()!.nqVelocity)}</span>
                     </div>
                   </Show>
                   <Show when={stats()?.hqVelocity != null && stats()!.hqVelocity > 0}>
-                    <div class="flex items-center gap-1.5">
+                    <div class={'flex items-center gap-1.5 ' + (bothQualities() ? qualityRowClass('hq') : '')}>
                       <QualityBadge hq />
                       <span class="font-medium">{formatDailySales(stats()!.hqVelocity)}</span>
                     </div>
                   </Show>
                   <Show when={(stats()?.nqVelocity ?? 0) === 0 && (stats()?.hqVelocity ?? 0) === 0}>
-                    <span class="text-muted-foreground">-</span>
+                    {/* 已加载但销量为 0（非加载中），用 tooltip 说明避免歧义 */}
+                    <Tooltip>
+                      <TooltipTrigger class="text-muted-foreground cursor-default" aria-label="近期无成交记录">
+                        -
+                      </TooltipTrigger>
+                      <TooltipPortal>
+                        <TooltipContent>近期无成交记录</TooltipContent>
+                      </TooltipPortal>
+                    </Tooltip>
                   </Show>
                 </div>
               </div>
@@ -1729,7 +1896,7 @@ export default function ItemDetail() {
       </Show>
 
       <Show when={!showMarketSkeleton()} fallback={<ListingChartSkeleton />}>
-        <Show when={currentListings().length > 0}>
+        <Show when={filteredListings().length > 0}>
           <Card class="mb-6 py-3">
             <CardHeader class="pb-2">
               <CardTitle class="text-sm">挂单价格分布</CardTitle>
@@ -1742,10 +1909,10 @@ export default function ItemDetail() {
                   <TabsTrigger value="violin">小提琴图</TabsTrigger>
                 </TabsList>
                 <TabsContent value="bar">
-                  <ServerListingBarChart listings={currentListings()} history={history()} scope={scope()} />
+                  <ServerListingBarChart listings={filteredListings()} history={filteredHistory()} scope={scope()} historyLoading={showHistorySkeleton()} />
                 </TabsContent>
                 <TabsContent value="violin">
-                  <ServerListingViolin listings={currentListings()} scope={scope()} />
+                  <ServerListingViolin listings={filteredListings()} scope={scope()} />
                 </TabsContent>
               </Tabs>
             </CardContent>
@@ -1753,8 +1920,8 @@ export default function ItemDetail() {
         </Show>
       </Show>
 
-      <Show when={history().length > 0 || showHistorySkeleton()}>
-        <Show when={history().length > 0} fallback={<ListingChartSkeleton />}>
+      <Show when={filteredHistory().length > 0 || showHistorySkeleton()}>
+        <Show when={filteredHistory().length > 0} fallback={<ListingChartSkeleton />}>
           <Card class="mb-6 py-3">
             <CardHeader class="pb-2">
               <CardTitle class="text-sm">交易走势</CardTitle>
@@ -1767,10 +1934,10 @@ export default function ItemDetail() {
                   <TabsTrigger value="scatter">散点</TabsTrigger>
                 </TabsList>
                 <TabsContent value="line">
-                  <ServerHistoryTrendChart history={history()} />
+                  <ServerHistoryTrendChart history={filteredHistory()} />
                 </TabsContent>
                 <TabsContent value="scatter">
-                  <ServerHistoryScatterChart history={history()} scope={scope()} />
+                  <ServerHistoryScatterChart history={filteredHistory()} scope={scope()} />
                 </TabsContent>
               </Tabs>
             </CardContent>
@@ -1791,14 +1958,14 @@ export default function ItemDetail() {
                 <CardTitle class="text-sm">当前挂单</CardTitle>
                 <CardDescription class="text-xs">
                   <Show when={!showMarketSkeleton()} fallback="正在加载挂单数据">
-                    共 {currentListings().length} 个挂单
+                    共 {filteredListings().length} 个挂单
                   </Show>
                 </CardDescription>
               </CardHeader>
               <CardContent class="pt-0">
                 <Show when={!showMarketSkeleton()} fallback={<ListingTableSkeleton />}>
                   <Show
-                    when={currentListings().length > 0}
+                    when={filteredListings().length > 0}
                     fallback={
                       <EmptyState
                         title="暂无挂单数据"
@@ -1818,7 +1985,7 @@ export default function ItemDetail() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        <For each={currentListings().slice(0, 50)}>
+                        <For each={filteredListings().slice(0, 50)}>
                           {(listing) => (
                             <TableRow>
                               <TableCell>
@@ -1854,14 +2021,14 @@ export default function ItemDetail() {
                 <CardTitle class="text-sm">成交历史</CardTitle>
                 <CardDescription class="text-xs">
                   <Show when={!showHistorySkeleton()} fallback="正在加载成交记录">
-                    近期 {history().length} 笔成交记录
+                    近期 {filteredHistory().length} 笔成交记录
                   </Show>
                 </CardDescription>
               </CardHeader>
               <CardContent class="pt-0">
                 <Suspense fallback={<Skeleton class="h-[400px]" />}>
                   <Show
-                    when={history().length > 0}
+                    when={filteredHistory().length > 0}
                     fallback={
                       <Show
                         when={!showHistorySkeleton()}
@@ -1889,7 +2056,7 @@ export default function ItemDetail() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        <For each={history().slice(0, 30)}>
+                        <For each={filteredHistory().slice(0, 30)}>
                           {(sale) => (
                             <TableRow>
                               <TableCell>
