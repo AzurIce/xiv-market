@@ -48,18 +48,17 @@ function NqTag() {
 function PriceNqHq(props: { nq?: number; hq?: number }) {
   const hasNq = createMemo(() => props.nq != null && props.nq! > 0)
   const hasHq = createMemo(() => props.hq != null && props.hq! > 0)
-  const both = createMemo(() => hasNq() && hasHq())
   const onlyNq = createMemo(() => hasNq() && !hasHq())
   return (
     <div class="flex flex-col gap-0.5 leading-tight">
-      <Show when={both() || onlyNq()}>
+      <Show when={hasNq()}>
         <span class="flex items-center gap-1">
-          {both() && <NqTag />}<span class={onlyNq() ? 'font-medium' : 'text-muted-foreground'}>{formatGil(props.nq!)}</span>
+          <NqTag /><span class={onlyNq() ? 'font-medium' : 'text-muted-foreground'}>{formatGil(props.nq!)}</span>
         </span>
       </Show>
       <Show when={hasHq()}>
         <span class="flex items-center gap-1">
-          {both() && <HqTag />}<span class="font-medium">{formatGil(props.hq!)}</span>
+          <HqTag /><span class="font-medium">{formatGil(props.hq!)}</span>
         </span>
       </Show>
       <Show when={!hasNq() && !hasHq()}>
@@ -72,19 +71,18 @@ function PriceNqHq(props: { nq?: number; hq?: number }) {
 function VelocityNqHq(props: { nq?: number; hq?: number }) {
   const hasNq = createMemo(() => props.nq != null && props.nq! > 0)
   const hasHq = createMemo(() => props.hq != null && props.hq! > 0)
-  const both = createMemo(() => hasNq() && hasHq())
   const onlyNq = createMemo(() => hasNq() && !hasHq())
   const fmt = (v: number) => v < 0.01 ? '<0.01' : v.toFixed(2)
   return (
     <div class="flex flex-col gap-0.5 leading-tight">
-      <Show when={both() || onlyNq()}>
+      <Show when={hasNq()}>
         <span class="flex items-center gap-1">
-          {both() && <NqTag />}<span class={onlyNq() ? 'font-medium' : 'text-muted-foreground'}>{fmt(props.nq!)}/天</span>
+          <NqTag /><span class={onlyNq() ? 'font-medium' : 'text-muted-foreground'}>{fmt(props.nq!)}/天</span>
         </span>
       </Show>
       <Show when={hasHq()}>
         <span class="flex items-center gap-1">
-          {both() && <HqTag />}<span class="font-medium">{fmt(props.hq!)}/天</span>
+          <HqTag /><span class="font-medium">{fmt(props.hq!)}/天</span>
         </span>
       </Show>
       <Show when={!hasNq() && !hasHq()}>
@@ -442,14 +440,14 @@ export default function Home() {
                                 <div class="flex flex-col gap-0.5 leading-tight">
                                   <Show when={minListingInfo()!.nqPrice != null && minListingInfo()!.nqPrice! > 0}>
                                     <span class="flex items-center gap-1">
-                                      {(minListingInfo()!.hqPrice != null && minListingInfo()!.hqPrice! > 0) && <NqTag />}
+                                      <NqTag />
                                       <span class="font-medium">{formatGil(minListingInfo()!.nqPrice!)} Gil</span>
                                       <Show when={minListingInfo()!.nqWorldId}><WorldBadge worldId={minListingInfo()!.nqWorldId} class="text-xs text-muted-foreground" /></Show>
                                     </span>
                                   </Show>
                                   <Show when={minListingInfo()!.hqPrice != null && minListingInfo()!.hqPrice! > 0}>
                                     <span class="flex items-center gap-1">
-                                      {(minListingInfo()!.nqPrice != null && minListingInfo()!.nqPrice! > 0) && <HqTag />}
+                                      <HqTag />
                                       <span class="font-medium">{formatGil(minListingInfo()!.hqPrice!)} Gil</span>
                                       <Show when={minListingInfo()!.hqWorldId}><WorldBadge worldId={minListingInfo()!.hqWorldId} class="text-xs text-muted-foreground" /></Show>
                                     </span>
