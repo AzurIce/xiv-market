@@ -29,6 +29,14 @@
     "./pages/settings": {
       "types": "./src/pages/settings.tsx",
       "default": "./src/pages/settings.tsx"
+    },
+    "./toast": {
+      "types": "./src/toast.tsx",
+      "default": "./src/toast.tsx"
+    },
+    "./error-boundary": {
+      "types": "./src/error-boundary.tsx",
+      "default": "./src/error-boundary.tsx"
     }
   },
   "dependencies": {

@@ -23,6 +23,17 @@ createEffect(() => {
 export const [dataCenters, setDataCenters] = createStore<DataCenter[]>([])
 export const [worlds, setWorlds] = createStore<World[]>([])
 
+// 大区/服务器映射是否就绪。未就绪时 scope 判定（region/dc/world）不可靠，
+// 依赖 scope 过滤的页面应按"数据未就绪"（骨架）处理，而非过滤为空
+export function worldsReady(): boolean {
+  return dataCenters.length > 0 && worlds.length > 0
+}
+
+// 大区/服务器映射加载失败标记（由 Navbar 的请求 catch 置位）。
+// 用于区分"加载中"（页面骨架等待）与"失败"（降级：请求照常、客户端不做 scope 过滤），
+// 避免失败时页面永久骨架
+export const [worldsLoadFailed, setWorldsLoadFailed] = createSignal(false)
+
 // 中国大区的玩家俗称
 const DC_SHORT_NAMES: Record<string, string> = {
   '陆行鸟': '鸟',

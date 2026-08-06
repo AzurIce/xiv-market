@@ -174,6 +174,35 @@ export function Card(props: CardProps) {
 
 Solid.js JSX 使用 `class` 而非 `className`。组件只接受 `class` prop。
 
+### 数据加载：createQueryResource
+
+异步数据面统一使用 `@xiv-market/shared` 的 `createQueryResource` + `matchedData`，不要在页面里使用裸 `createResource`（Solid 1.9 读取 errored resource 会 throw，需要 ErrorBoundary 兜底）：
+
+```tsx
+const agg = createQueryResource(
+  () => (ready() ? { region: selectedRegion(), ids: ids() } : null), // null = 前置未就绪，不请求
+  ({ region, ids }, signal) => fetchAndBuild(region, ids, signal),
+)
+// 只接受与当前查询参数匹配的数据；不匹配（旧查询残留）= 无数据
+const aggMap = () => matchedData(agg.res(), (q) => q.region === selectedRegion() && q.ids === ids())
+// 错误落点：有数据时失败 → toast；无数据时失败 → 下方错误屏
+useErrorToast(agg.error, () => aggMap() !== undefined, agg.refetch)
+```
+
+渲染矩阵（每个数据面独立套用）：
+
+| 数据 | 错误 | 用户看到 |
+|---|---|---|
+| 无（`aggMap() === undefined`） | 无 | 骨架（行数贴近最终内容，容器 `role="status"` + sr-only 文本） |
+| 无 | 有 | `EmptyState variant="error"` + 重试 |
+| 有·空内容 | 任意 | `EmptyState` 默认变体（空态是 ready 内容为空的形态） |
+| 有·非空 | 任意 | 内容；`loading()` 时 RefreshButton 旋转（不闪骨架、不清空） |
+
+要点：失败不清空数据（resource value 永远是最新可用值）；刷新失败不替换内容，只弹 toast。
+fetcher 的第二个参数是当前查询的 `AbortSignal`，必须继续传给底层请求；切换查询、重复刷新或组件卸载时，旧请求会据此取消。
+
+⚠️ 不要在资源读取的上层包 `<Suspense>`（包括 App 根部）：Solid 的 `createResource` 被读取时会注册到**最近的** Suspense 边界，上层边界会把整页（含标题/搜索/刷新按钮）回退成 fallback 直到数据就绪。页面的加载/错误/空态一律用 Show 矩阵显式渲染。
+
 ## 代码组织
 
 ### 页面文件结构
@@ -206,6 +235,8 @@ export default function MyPage() {
 - 独有页面（如 enhanced-app 的 `EnhancedDashboard.tsx`）
 
 不要在应用层写业务逻辑或 UI 组件。
+
+应用层引用 ui 包时使用 subpath（如 `@xiv-market/ui/toast`、`@xiv-market/ui/error-boundary`），**不要从总入口 `@xiv-market/ui` 导入**——总入口静态导出全部页面，一旦被应用层引用，所有页面都会进入首屏依赖图，lazy 路由分包失效（Vite 会报 INEFFECTIVE_DYNAMIC_IMPORT）。
 
 ## 图标规范
 

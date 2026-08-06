@@ -1,4 +1,5 @@
 import { createSignal } from 'solid-js'
+import { fetchJsonWithTimeout } from './async'
 import { baseUrl } from './utils'
 
 export interface ItemInfo {
@@ -24,15 +25,18 @@ let itemCount = 0
 let loadPromise: Promise<void> | null = null
 const [itemsRevision, setItemsRevision] = createSignal(0)
 
+// 物品数据加载状态：loading/ready/error。失败后可再次调用 loadItems() 重试
+// （重试时若已有 loadPromise 在途则复用；失败已将其清空，故会发起新请求）
+export type ItemsStatus = 'loading' | 'ready' | 'error'
+export const [itemsStatus, setItemsStatus] = createSignal<ItemsStatus>('loading')
+
 function trackItems() {
   itemsRevision()
 }
 
 async function fetchItems() {
   const url = `${baseUrl()}items.json?v=${__BUILD_COMMIT__}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`${url} ${res.status}`)
-  return res.json() as Promise<LegacyItemsPayload>
+  return fetchJsonWithTimeout<LegacyItemsPayload>(url, '物品数据请求失败')
 }
 
 function normalizeItems(payload: LegacyItemsPayload): Map<number, ItemInfo> {
@@ -51,17 +55,22 @@ export async function loadItems(): Promise<void> {
   if (itemsLoaded) return
   if (loadPromise) return loadPromise
 
+  // 失败后的重试重新进入 loading：页面从错误屏切回骨架，给出加载反馈
+  // （重复调用由上面的 loadPromise 复用去重，不会并发请求）
+  setItemsStatus('loading')
   loadPromise = (async () => {
     try {
       itemsCache = normalizeItems(await fetchItems())
       itemCount = itemsCache.size
       itemsLoaded = true
+      setItemsStatus('ready')
       console.log('[Items] Loaded %d items (commit: %s)', itemCount, __BUILD_COMMIT__)
     } catch (err) {
       // 失败时不标记 loaded，下次调用 loadItems() 可重试
       console.error('[Items] Failed to load: %s', err instanceof Error ? err.message : err)
       itemsCache = new Map()
       itemCount = 0
+      setItemsStatus('error')
     } finally {
       setItemsRevision((version) => version + 1)
     }

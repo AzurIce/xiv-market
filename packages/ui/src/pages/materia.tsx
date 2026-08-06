@@ -1,9 +1,12 @@
-import { createEffect, createMemo, createResource, createSignal, onCleanup, For, Show, Suspense } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup, For, Show } from 'solid-js'
 import { useNavigate, useSearchParams } from '@solidjs/router'
 import {
   fetchAggregatedData,
+  createQueryResource,
+  matchedData,
   getAllItems,
-  getIconUrl,
+  itemsStatus,
+  loadItems,
   selectedRegion,
   type AggregatedItemData,
 } from '@xiv-market/shared'
@@ -11,11 +14,13 @@ import { Button } from '../button'
 import { Card, CardContent } from '../card'
 import { EmptyState } from '../empty-state'
 import { Input } from '../input'
+import { ItemIcon } from '../item-icon'
 import { PageHeader } from '../page-header'
 import { RefreshButton } from '../refresh-button'
 import { Select, SelectContent, SelectItem, SelectPortal, SelectTrigger, SelectValue } from '../select'
 import { Skeleton } from '../skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../table'
+import { useErrorToast } from '../use-error-toast'
 import { WorldBadge } from '../world-badge'
 
 type MateriaGrade = 'all' | '拾贰' | '拾壹' | '拾' | '玖' | '捌' | '柒' | '陆' | '伍' | '肆' | '叁' | '贰' | '壹'
@@ -402,8 +407,19 @@ function ListingVelocity(props: { value?: number }) {
   )
 }
 
+// 骨架行数跟随当前筛选行数：切换筛选导致的重新加载不产生高度跳动
+function TableSkeleton(props: { rows: number }) {
+  return (
+    <div class="space-y-2" role="status">
+      <span class="sr-only">加载中</span>
+      <For each={Array.from({ length: props.rows })}>
+        {() => <Skeleton class="h-12 w-full" />}
+      </For>
+    </div>
+  )
+}
+
 function MateriaMobileCard(props: { row: MateriaRow; onOpen: (e?: MouseEvent) => void }) {
-  const iconUrls = () => getIconUrl(props.row.icon)
   const agg = () => props.row.agg
 
   return (
@@ -422,19 +438,7 @@ function MateriaMobileCard(props: { row: MateriaRow; onOpen: (e?: MouseEvent) =>
     >
       <CardContent class="space-y-3">
         <div class="flex items-center gap-3">
-          <Show when={iconUrls().length > 0}>
-            <img
-              src={iconUrls()[0]}
-              alt=""
-              class="h-8 w-8 shrink-0 rounded"
-              loading="lazy"
-              onError={(e) => {
-                const urls = iconUrls()
-                if (urls.length > 1) e.currentTarget.src = urls[1]
-                else e.currentTarget.style.display = 'none'
-              }}
-            />
-          </Show>
+          <ItemIcon itemId={props.row.id} class="h-8 w-8 shrink-0 rounded" />
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-medium">{props.row.name}</div>
             <div class="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -501,7 +505,7 @@ export default function MateriaPage() {
       .filter((item) => item.color !== 'gray')
   })
 
-  // 排序不在这里做（避免 sortKey 变化触发 agg 全量 refetch），基础排序固定为颜色→品级→类型→名称
+  // 基础排序固定为颜色→品级→类型→名称；显示排序在 currentRows 本地做（不发请求）
   const filteredItems = createMemo<MateriaItem[]>(() => {
     const search = debouncedQuery().trim().toLowerCase()
     return materiaItems()
@@ -535,11 +539,16 @@ export default function MateriaPage() {
   const currentItems = createMemo(() => {
     return filteredItems()
   })
-  const [aggData, { refetch: refetchAggData }] = createResource(
-    () => ({ region: selectedRegion(), ids: currentItems().map((item) => item.id) }),
-    async ({ region, ids }) => {
+
+  // 魔晶石全集固定且量小（~150 个），聚合数据按 region 一次拉全（分批并发），
+  // 筛选/搜索/排序全部本地完成——不发请求、不闪骨架；只有切区和点刷新才重新请求。
+  // 前置：items.json 未就绪时不发起请求（加载中 → 骨架；失败 → 错误屏重试）
+  const agg = createQueryResource(
+    () => (itemsStatus() === 'ready' ? { region: selectedRegion() } : null),
+    async ({ region }, signal) => {
+      const ids = materiaItems().map((item) => item.id)
       const map = new Map<number, AggregatedItemData>()
-      if (!ids.length) return { region, map }
+      if (!ids.length) return map
 
       const batches: number[][] = []
       for (let i = 0; i < ids.length; i += BATCH_SIZE) {
@@ -547,24 +556,24 @@ export default function MateriaPage() {
       }
 
       const results = await Promise.all(
-        batches.map((batch) => fetchAggregatedData(region, batch.join(',')))
+        batches.map((batch) => fetchAggregatedData(region, batch.join(','), 'region', signal))
       )
       for (const batch of results) {
         for (const item of batch) {
           map.set(item.itemId, item)
         }
       }
-      return { region, map }
+      return map
     }
   )
-  // 只接受属于当前区域的数据：初次加载/切区域时旧数据失效 → 骨架屏；
-  // 点刷新（同区域 refetch）时旧数据仍有效 → 保留内容，不闪骨架
-  const validAggData = createMemo(() => {
-    const result = aggData()
-    return result && result.region === selectedRegion() ? result.map : null
-  })
+  const aggMap = () =>
+    matchedData(agg.res(), (q) => q.region === selectedRegion())
+
+  // 错误落点：无数据 → 下方错误屏；有数据（点刷新失败）→ toast
+  useErrorToast(agg.error, () => aggMap() !== undefined, agg.refetch)
+
   const currentRows = createMemo<MateriaRow[]>(() => {
-    const map = validAggData()
+    const map = aggMap()
     const rows = currentItems().map((item) => ({ ...item, agg: map?.get(item.id) }))
     if (sortKey() === 'name') {
       return rows.sort((a, b) => {
@@ -655,7 +664,9 @@ export default function MateriaPage() {
   }
 
   const handleRefresh = () => {
-    refetchAggData()
+    // 前置（物品基础数据）失败时重试前置；否则只刷新聚合数据（参数不变，内容保留）
+    if (itemsStatus() === 'error') void loadItems()
+    else agg.refetch()
   }
 
   const itemPath = (itemId: number) => `/item/${itemId}`
@@ -680,7 +691,7 @@ export default function MateriaPage() {
       <PageHeader
         title="魔晶石行情"
         description="集中查看全部常规魔晶石的最低挂单、成交均价和日销量"
-        actions={<RefreshButton loading={aggData.loading} onClick={handleRefresh} />}
+        actions={<RefreshButton loading={agg.loading()} onClick={handleRefresh} />}
       />
 
       <div class="mb-6 grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
@@ -769,116 +780,105 @@ export default function MateriaPage() {
         }}
       />
 
-      <Suspense fallback={
-        <div class="space-y-2">
-          <For each={Array.from({ length: 8 })}>
-            {() => <Skeleton class="h-12 w-full" />}
-          </For>
-        </div>
-      }>
+      <Show
+        when={itemsStatus() !== 'error'}
+        fallback={
+          <EmptyState
+            variant="error"
+            title="物品数据加载失败"
+            description="物品基础数据（名称、图标）暂时无法获取，请稍后再试"
+            action={<Button variant="outline" size="sm" onClick={() => void loadItems()}>重试</Button>}
+          />
+        }
+      >
         <Show
-          when={!aggData.error}
+          when={aggMap() !== undefined}
           fallback={
-            <EmptyState
-              title="魔晶石行情加载失败"
-              description="当前区域的聚合行情暂时无法获取，请稍后再试"
-            />
-          }
-        >
-          <Show
-            when={Boolean(validAggData())}
-            fallback={
-              <div class="space-y-2">
-                <For each={Array.from({ length: 8 })}>
-                  {() => <Skeleton class="h-12 w-full" />}
-                </For>
-              </div>
-            }
-          >
             <Show
-              when={currentRows().length > 0}
+              when={!agg.error()}
               fallback={
                 <EmptyState
-                  title="未找到魔晶石"
-                  description="当前筛选条件下没有匹配的魔晶石"
+                  variant="error"
+                  title="魔晶石行情加载失败"
+                  description={agg.error() ?? undefined}
+                  action={<RefreshButton loading={agg.loading()} onClick={handleRefresh} />}
                 />
               }
             >
-              <div class="hidden sm:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow class="hover:bg-transparent">
-                      <TableHead>魔晶石</TableHead>
-                      <TableHead>属性</TableHead>
-                      <TableHead>最低挂单</TableHead>
-                      <TableHead>成交均价</TableHead>
-                      <TableHead>日销量</TableHead>
-                      <TableHead class="hidden lg:table-cell">更新</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <For each={currentRowsWithSections()}>
-                      {(entry) => {
-                        if (entry.type === 'section') {
-                          return <SectionHeaderRow color={entry.color} count={entry.count} />
-                        }
-                        const row = entry.row
-                        const iconUrls = () => getIconUrl(row.icon)
-                        return (
-                          <TableRow class="cursor-pointer" onClick={(e) => openItem(row.id, e)} onAuxClick={(e) => openItem(row.id, e)}>
-                            <TableCell>
-                              <div class="flex items-center gap-2">
-                                <Show when={iconUrls().length > 0}>
-                                  <img
-                                    src={iconUrls()[0]}
-                                    alt=""
-                                    class="size-7 shrink-0 rounded"
-                                    loading="lazy"
-                                    onError={(e) => {
-                                      const urls = iconUrls()
-                                      if (urls.length > 1) e.currentTarget.src = urls[1]
-                                      else e.currentTarget.style.display = 'none'
-                                    }}
-                                  />
-                                </Show>
-                                <div class="min-w-0">
-                                  <div class="max-w-xs truncate font-medium">{row.name}</div>
-                                  <div class="text-xs text-muted-foreground">#{row.id}</div>
-                                </div>
-                              </div>
-                          </TableCell>
-                          <TableCell>
-                            <StatValue row={row} />
-                          </TableCell>
-                          <TableCell>
-                            <ListingPrice price={row.agg?.nq.minListingPrice} worldId={getListingWorldId(row.agg)} />
-                          </TableCell>
-                          <TableCell>
-                            <PriceValue value={row.agg?.nq.averageSalePrice} />
-                          </TableCell>
-                          <TableCell>
-                            <ListingVelocity value={row.agg?.nq.dailySaleVelocity} />
-                          </TableCell>
-                          <TableCell class="hidden lg:table-cell text-xs text-muted-foreground">
-                            {formatTime(row.agg?.lastUploadTime)}
-                          </TableCell>
-                          </TableRow>
-                        )
-                      }}
-                    </For>
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div class="space-y-2 sm:hidden">
-                <For each={currentRows()}>
-                  {(row) => <MateriaMobileCard row={row} onOpen={(e) => openItem(row.id, e)} />}
-                </For>
-              </div>
+              <TableSkeleton rows={currentRows().length || 8} />
             </Show>
+          }
+        >
+          <Show
+            when={currentRows().length > 0}
+            fallback={
+              <EmptyState
+                title="未找到魔晶石"
+                description="当前筛选条件下没有匹配的魔晶石"
+              />
+            }
+          >
+            <div class="hidden sm:block">
+              <Table>
+                <TableHeader>
+                  <TableRow class="hover:bg-transparent">
+                    <TableHead>魔晶石</TableHead>
+                    <TableHead>属性</TableHead>
+                    <TableHead>最低挂单</TableHead>
+                    <TableHead>成交均价</TableHead>
+                    <TableHead>日销量</TableHead>
+                    <TableHead class="hidden lg:table-cell">更新</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <For each={currentRowsWithSections()}>
+                    {(entry) => {
+                      if (entry.type === 'section') {
+                        return <SectionHeaderRow color={entry.color} count={entry.count} />
+                      }
+                      const row = entry.row
+                      return (
+                        <TableRow class="cursor-pointer" onClick={(e) => openItem(row.id, e)} onAuxClick={(e) => openItem(row.id, e)}>
+                          <TableCell>
+                            <div class="flex items-center gap-2">
+                              <ItemIcon itemId={row.id} class="size-7 shrink-0 rounded" />
+                              <div class="min-w-0">
+                                <div class="max-w-xs truncate font-medium">{row.name}</div>
+                                <div class="text-xs text-muted-foreground">#{row.id}</div>
+                              </div>
+                            </div>
+                        </TableCell>
+                        <TableCell>
+                          <StatValue row={row} />
+                        </TableCell>
+                        <TableCell>
+                          <ListingPrice price={row.agg?.nq.minListingPrice} worldId={getListingWorldId(row.agg)} />
+                        </TableCell>
+                        <TableCell>
+                          <PriceValue value={row.agg?.nq.averageSalePrice} />
+                        </TableCell>
+                        <TableCell>
+                          <ListingVelocity value={row.agg?.nq.dailySaleVelocity} />
+                        </TableCell>
+                        <TableCell class="hidden lg:table-cell text-xs text-muted-foreground">
+                          {formatTime(row.agg?.lastUploadTime)}
+                        </TableCell>
+                        </TableRow>
+                      )
+                    }}
+                  </For>
+                </TableBody>
+              </Table>
+            </div>
+
+            <div class="space-y-2 sm:hidden">
+              <For each={currentRows()}>
+                {(row) => <MateriaMobileCard row={row} onOpen={(e) => openItem(row.id, e)} />}
+              </For>
+            </div>
           </Show>
         </Show>
-      </Suspense>
+      </Show>
     </div>
   )
 }

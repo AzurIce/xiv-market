@@ -1,10 +1,13 @@
-import { Show } from 'solid-js'
+import { For, Show } from 'solid-js'
 import { A } from '@solidjs/router'
-import { getItemsVersionInfo, type ItemsVersionInfo } from '@xiv-market/shared'
+import { getItemsVersionInfo, itemsStatus, loadItems, type ItemsVersionInfo } from '@xiv-market/shared'
+import { Button } from '../button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
 import { Badge } from '../badge'
+import { EmptyState } from '../empty-state'
 import { PageHeader } from '../page-header'
 import { Separator } from '../separator'
+import { Skeleton } from '../skeleton'
 
 declare const __GIT_COMMIT__: string
 declare const __BUILD_DATE__: string
@@ -74,10 +77,30 @@ export default function Settings() {
             <Show
               when={versionInfo()}
               fallback={
-                <div class="flex items-center gap-2 text-muted-foreground">
-                  <div class="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                  数据加载中...
-                </div>
+                <Show
+                  when={itemsStatus() !== 'error'}
+                  fallback={
+                    <EmptyState
+                      variant="error"
+                      class="py-6"
+                      title="物品数据加载失败"
+                      description="物品名称与图标数据暂时无法获取，请稍后再试"
+                      action={<Button variant="outline" size="sm" onClick={() => void loadItems()}>重试</Button>}
+                    />
+                  }
+                >
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-6" role="status">
+                    <span class="sr-only">加载中</span>
+                    <For each={Array.from({ length: 3 })}>
+                      {() => (
+                        <div class="space-y-1.5">
+                          <Skeleton class="h-3 w-16" />
+                          <Skeleton class="h-5 w-24" />
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               }
             >
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">

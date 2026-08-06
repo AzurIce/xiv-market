@@ -1,5 +1,6 @@
 export * from './types'
 export * from './api'
+export * from './async'
 export * from './items'
 export * from './region'
 export * from './utils'

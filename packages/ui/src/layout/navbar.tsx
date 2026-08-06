@@ -1,6 +1,6 @@
 import { createEffect, createResource, createSignal, For, lazy, onMount, Show, Suspense } from 'solid-js'
 import { A } from '@solidjs/router'
-import { selectedRegion, setDataCenters, setWorlds, fetchDataCenters, fetchWorlds } from '@xiv-market/shared'
+import { selectedRegion, setDataCenters, setWorlds, fetchDataCenters, fetchWorlds, errMessage, setWorldsLoadFailed } from '@xiv-market/shared'
 
 const RegionSelect = lazy(() => import('./region-select'))
 
@@ -16,8 +16,35 @@ export function Navbar(props: {
   const badgeClass = () => 'bg-[rgba(245,158,11,0.15)] text-[#d97706] border-[rgba(245,158,11,0.25)]'
   const [showRegionSelect, setShowRegionSelect] = createSignal(false)
 
-  const [dataCentersRes] = createResource(fetchDataCenters)
-  const [worldsRes] = createResource(fetchWorlds)
+  // 大区/服务器列表失败时静默降级：RegionSelect 用硬编码区域列表、
+  // WorldBadge 退化为纯文本，功能仍可用，不打断用户（仅 console 留痕）。
+  // 同时置 worldsLoadFailed，让 ItemDetail 从"骨架等待"转为"降级不过滤"。
+  // fetcher 不抛出，避免 Solid 1.9 读取 errored resource 时 throw
+  const [dataCentersRes] = createResource(() =>
+    fetchDataCenters()
+      .then((d) => {
+        // 空列表等同失败（Universalis 不会合法返回空），走降级而非让页面永久等待
+        if (!d.length) throw new Error('数据中心列表为空')
+        return d
+      })
+      .catch((e) => {
+        console.warn('[Navbar] %s', errMessage(e))
+        setWorldsLoadFailed(true)
+        return null
+      })
+  )
+  const [worldsRes] = createResource(() =>
+    fetchWorlds()
+      .then((d) => {
+        if (!d.length) throw new Error('服务器列表为空')
+        return d
+      })
+      .catch((e) => {
+        console.warn('[Navbar] %s', errMessage(e))
+        setWorldsLoadFailed(true)
+        return null
+      })
+  )
 
   onMount(() => {
     const win = window as Window & {

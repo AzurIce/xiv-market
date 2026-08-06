@@ -1,14 +1,17 @@
-import { createResource, createMemo, createSignal, createEffect, Show, Suspense, For, on, onMount, onCleanup } from 'solid-js'
+import { createMemo, createSignal, createEffect, Show, For, on, onMount, onCleanup } from 'solid-js'
 import { useParams, A, useSearchParams } from '@solidjs/router'
-import { fetchMarketData, fetchHistoryData, selectedRegion, dataCenters, worlds, getItemName, getItemIconUrl, getDcNameByWorldName, getWorldName, getDcColorHex, baseUrl } from '@xiv-market/shared'
+import { fetchMarketData, fetchHistoryData, createQueryResource, matchedData, selectedRegion, dataCenters, worlds, worldsReady, worldsLoadFailed, getItemName, canItemBeHq, getDcNameByWorldName, getWorldName, getDcColorHex, baseUrl } from '@xiv-market/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
+import { Button } from '../button'
 import { QualityBadge } from '../quality-badge'
 import { Skeleton } from '../skeleton'
 import { Table, TableBody, TableRow, TableHead, TableCell, TableHeader } from '../table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../tabs'
 import { EmptyState } from '../empty-state'
+import { ItemIcon } from '../item-icon'
 import { RefreshButton } from '../refresh-button'
 import { ScopeSelect } from '../scope-select'
+import { useErrorToast } from '../use-error-toast'
 import { WorldBadge } from '../world-badge'
 import { Tooltip, TooltipPortal, TooltipTrigger, TooltipContent } from '../tooltip'
 
@@ -18,17 +21,25 @@ let chartPromise: Promise<ChartConstructor> | null = null
 let violinPluginPromise: Promise<void> | null = null
 
 async function loadChart(registerViolin = false): Promise<ChartConstructor> {
-  chartPromise ??= import('chart.js/auto').then((mod) => mod.default)
-  const Chart = await chartPromise
+  try {
+    chartPromise ??= import('chart.js/auto').then((mod) => mod.default)
+    const Chart = await chartPromise
 
-  if (registerViolin) {
-    violinPluginPromise ??= import('@sgratzl/chartjs-chart-boxplot').then((mod) => {
-      Chart.register(mod.ViolinController, mod.Violin)
-    })
-    await violinPluginPromise
+    if (registerViolin) {
+      violinPluginPromise ??= import('@sgratzl/chartjs-chart-boxplot').then((mod) => {
+        Chart.register(mod.ViolinController, mod.Violin)
+      })
+      await violinPluginPromise
+    }
+
+    return Chart
+  } catch (e) {
+    // 加载失败时重置缓存的 promise，下次调用可重试
+    // （否则 rejected promise 被永久复用，图表永远无法自愈）
+    chartPromise = null
+    violinPluginPromise = null
+    throw e
   }
-
-  return Chart
 }
 
 const CHINA_DC_NAMES = ['陆行鸟', '莫古力', '猫小胖', '豆豆柴'] as const
@@ -351,7 +362,8 @@ function PriceRangeStrip(props: {
 
 function ListingTableSkeleton() {
   return (
-    <div class="space-y-2" aria-busy="true" aria-label="挂单加载中">
+    <div class="space-y-2" role="status">
+      <span class="sr-only">加载中</span>
       <div class="grid grid-cols-[3rem_1fr_3rem_1fr_5rem_5rem] gap-4 px-3 py-2">
         <For each={Array.from({ length: 6 })}>
           {() => <Skeleton class="h-4 w-full" />}
@@ -375,7 +387,8 @@ function ListingTableSkeleton() {
 
 function ListingChartSkeleton() {
   return (
-    <Card class="mb-6 py-3" aria-busy="true" aria-label="挂单价格分布加载中">
+    <Card class="mb-6 py-3" role="status">
+      <span class="sr-only">加载中</span>
       <CardHeader class="pb-2">
         <Skeleton class="h-5 w-28" />
         <Skeleton class="h-4 w-40" />
@@ -388,6 +401,34 @@ function ListingChartSkeleton() {
         <Skeleton class="h-[300px] w-full" />
       </CardContent>
     </Card>
+  )
+}
+
+// 图表卡片区域的错误屏（无数据时错误的落点）
+function ChartErrorCard(props: { title: string; description?: string; loading: boolean; onRetry: () => void }) {
+  return (
+    <Card class="mb-6 py-3">
+      <CardContent class="pt-0">
+        <EmptyState
+          variant="error"
+          title={props.title}
+          description={props.description}
+          action={<RefreshButton loading={props.loading} onClick={props.onRetry} />}
+        />
+      </CardContent>
+    </Card>
+  )
+}
+
+// chart.js 动态 import 失败时的图内错误行（图表代码包加载失败，与数据无关）
+function ChartLoadError(props: { onRetry: () => void }) {
+  return (
+    <div class="flex h-[240px] sm:h-[320px] w-full flex-col items-center justify-center gap-2" role="alert">
+      <p class="text-sm text-muted-foreground">图表加载失败</p>
+      <Button variant="link" size="sm" class="h-auto p-0" onClick={props.onRetry}>
+        重试
+      </Button>
+    </div>
   )
 }
 
@@ -511,10 +552,12 @@ function SalesTrendIcon(props: { trend: SalesTrend }) {
 
 function ServerListingViolin(props: { listings: any[]; scope: string }) {
   let canvasRef!: HTMLCanvasElement
+  const [loadError, setLoadError] = createSignal(false)
 
   createEffect(() => {
     const listings = props.listings
     const scope = props.scope
+    if (loadError()) return
     if (!canvasRef || !listings?.length) return
 
     let chart: { destroy: () => void } | undefined
@@ -651,17 +694,21 @@ function ServerListingViolin(props: { listings: any[]; scope: string }) {
       })
 
       if (disposed) chart.destroy()
+    }).catch(() => {
+      if (!disposed) setLoadError(true)
     })
   })
 
   return (
-    <div class="h-[240px] sm:h-[320px] w-full" role="img" aria-label="服务器挂单价格小提琴图">
-      <canvas ref={canvasRef} aria-hidden="true" />
-    </div>
+    <Show when={!loadError()} fallback={<ChartLoadError onRetry={() => setLoadError(false)} />}>
+      <div class="h-[240px] sm:h-[320px] w-full" role="img" aria-label="服务器挂单价格小提琴图">
+        <canvas ref={canvasRef} aria-hidden="true" />
+      </div>
+    </Show>
   )
 }
 
-function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: string; historyLoading: boolean }) {
+function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: string; historyLoading: boolean; historyError?: boolean }) {
   const [hideOutliers, setHideOutliers] = createSignal(true)
 
   const serverData = createMemo(() => {
@@ -947,12 +994,21 @@ function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: 
                 </span>
                 <span
                   class="inline-flex items-center justify-end gap-1 text-right tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5"
-                  title={props.historyLoading ? undefined : `最近 7 天 ${formatDailySales(item.dailySales)}，前 7 天 ${formatDailySales(item.previousDailySales)}`}
+                  title={
+                    props.historyLoading
+                      ? undefined
+                      : props.historyError
+                        ? '成交历史加载失败'
+                        : `最近 7 天 ${formatDailySales(item.dailySales)}，前 7 天 ${formatDailySales(item.previousDailySales)}`
+                  }
                 >
-                  {/* 销量由 history 接口计算，未就绪前显示骨架而非 "-"，避免被误读为无数据 */}
+                  {/* 销量由 history 接口计算：加载中显示骨架（"-" 会被误读为无数据）；
+                      无数据且失败显示 "-" 并以 title 说明；有旧数据时刷新失败仍显示旧值（错误走 toast） */}
                   <Show when={!props.historyLoading} fallback={<Skeleton class="h-3 w-10" />}>
-                    <span>{formatDailySales(item.dailySales)}</span>
-                    <SalesTrendIcon trend={item.salesTrend} />
+                    <Show when={!props.historyError} fallback={<span>-</span>}>
+                      <span>{formatDailySales(item.dailySales)}</span>
+                      <SalesTrendIcon trend={item.salesTrend} />
+                    </Show>
                   </Show>
                 </span>
                 <span class="text-right whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5" title={item.lastReviewTime ? new Date(item.lastReviewTime).toLocaleString('zh-CN') : undefined}>
@@ -978,9 +1034,11 @@ function ServerListingBarChart(props: { listings: any[]; history: any[]; scope: 
 
 function ServerHistoryTrendChart(props: { history: any[] }) {
   let canvasRef!: HTMLCanvasElement
+  const [loadError, setLoadError] = createSignal(false)
 
   createEffect(() => {
     const data = props.history
+    if (loadError()) return
     if (!canvasRef || !data?.length) return
 
     let chart: { destroy: () => void } | undefined
@@ -1114,22 +1172,28 @@ function ServerHistoryTrendChart(props: { history: any[] }) {
       })
 
       if (disposed) chart.destroy()
+    }).catch(() => {
+      if (!disposed) setLoadError(true)
     })
   })
 
   return (
-    <div class="h-[240px] sm:h-[320px] w-full" role="img" aria-label="服务器历史价格走势图">
-      <canvas ref={canvasRef} aria-hidden="true" />
-    </div>
+    <Show when={!loadError()} fallback={<ChartLoadError onRetry={() => setLoadError(false)} />}>
+      <div class="h-[240px] sm:h-[320px] w-full" role="img" aria-label="服务器历史价格走势图">
+        <canvas ref={canvasRef} aria-hidden="true" />
+      </div>
+    </Show>
   )
 }
 
 function ServerHistoryScatterChart(props: { history: any[]; scope: string }) {
   let canvasRef!: HTMLCanvasElement
+  const [loadError, setLoadError] = createSignal(false)
 
   createEffect(() => {
     const data = props.history
     const scope = props.scope
+    if (loadError()) return
     if (!canvasRef || !data?.length) return
 
     let chart: { destroy: () => void } | undefined
@@ -1263,13 +1327,17 @@ function ServerHistoryScatterChart(props: { history: any[]; scope: string }) {
       })
 
       if (disposed) chart.destroy()
+    }).catch(() => {
+      if (!disposed) setLoadError(true)
     })
   })
 
   return (
-    <div class="h-[240px] sm:h-[300px] w-full" role="img" aria-label="服务器历史成交散点图">
-      <canvas ref={canvasRef} aria-hidden="true" />
-    </div>
+    <Show when={!loadError()} fallback={<ChartLoadError onRetry={() => setLoadError(false)} />}>
+      <div class="h-[240px] sm:h-[300px] w-full" role="img" aria-label="服务器历史成交散点图">
+        <canvas ref={canvasRef} aria-hidden="true" />
+      </div>
+    </Show>
   )
 }
 
@@ -1348,6 +1416,8 @@ export default function ItemDetail() {
   })
 
   const filterRowsByScope = <T extends { worldName?: string }>(rows: T[]) => {
+    // 映射未就绪（含加载失败降级）时不过滤：接口本身已按 scope 返回数据
+    if (!worldsReady()) return rows
     const names = scopedWorldNames()
     return rows.filter((row) => {
       if (row.worldName) return names.has(row.worldName)
@@ -1357,65 +1427,51 @@ export default function ItemDetail() {
 
   // 按当前 scope 请求：history 端点每次查询有 1800 条上限且整个 scope 共享，
   // region 级响应对热门物品达不到 30 天深度，dc/world 直查有独立额度、数据更完整，
-  // 因此切 scope 必须重新请求（在途旧请求由 api.ts 的 AbortController 取消）
-  const [marketDataResult, { refetch: refetchMarketData }] = createResource(
+  // 因此切 scope 必须重新请求（在途旧请求由 api.ts 的 AbortController 取消）。
+  // 请求与大区/服务器映射无关，并行发出不等它；数据与查询参数配对：
+  // 渲染只接受与当前 scope + id 匹配的结果
+  const market = createQueryResource(
     () => {
       const id = itemId()
       if (!id) return null
       return { scope: scope(), id }
     },
-    async ({ scope, id }: { scope: string; id: string }) => ({
-      scope,
-      id,
-      data: await fetchMarketData(scope, id),
-    })
+    ({ scope, id }, signal) => fetchMarketData(scope, id, signal),
   )
-
-  const [historyDataResult, { refetch: refetchHistoryData }] = createResource(
+  const historyRes = createQueryResource(
     () => {
       const id = itemId()
       if (!id) return null
       return { scope: scope(), id }
     },
-    async ({ scope, id }: { scope: string; id: string }) => ({
-      scope,
-      id,
-      data: await fetchHistoryData(scope, id),
-    })
+    ({ scope, id }, signal) => fetchHistoryData(scope, id, signal),
   )
 
   const handleRefresh = () => {
-    refetchMarketData()
-    refetchHistoryData()
+    market.refetch()
+    historyRes.refetch()
   }
 
-  const marketData = createMemo(() => {
-    const result = marketDataResult()
-    if (!result || result.scope !== scope() || result.id !== itemId()) return null
-    const id = Number(itemId())
-    return result.data[id] ?? null
-  })
+  // 大区/服务器映射：加载中 → 视为无数据（骨架等待，避免过滤不可靠误报空态）；
+  // 加载失败 → 降级照常展示（filterRowsByScope 不过滤，接口本身已按 scope 返回数据）
+  const worldsResolved = () => worldsReady() || worldsLoadFailed()
 
+  const marketMatched = () =>
+    worldsResolved()
+      ? matchedData(market.res(), (q) => q.scope === scope() && q.id === itemId())
+      : undefined
+  const historyMatched = () =>
+    worldsResolved()
+      ? matchedData(historyRes.res(), (q) => q.scope === scope() && q.id === itemId())
+      : undefined
+
+  // 错误落点：无数据 → 各区域错误屏；有数据（点刷新失败）→ toast
+  useErrorToast(market.error, () => marketMatched() !== undefined, market.refetch)
+  useErrorToast(historyRes.error, () => historyMatched() !== undefined, historyRes.refetch)
+
+  const marketData = createMemo(() => marketMatched()?.[Number(itemId())] ?? null)
   const currentListings = createMemo(() => filterRowsByScope(marketData()?.listings ?? []))
-  const history = createMemo(() => {
-    const result = historyDataResult()
-    if (!result || result.scope !== scope() || result.id !== itemId()) return []
-    return filterRowsByScope(result.data.entries ?? [])
-  })
-  const isMarketDataLoading = createMemo(() => {
-    const result = marketDataResult()
-    return marketDataResult.loading || Boolean(result && (result.scope !== scope() || result.id !== itemId()))
-  })
-  // 只在"没有任何可展示数据"时才用骨架屏：
-  // 初次加载/切 scope 时 marketData() 为空 → 骨架屏；
-  // 同 scope 点刷新（refetch）时旧数据仍然有效 → 保留内容，由刷新按钮的旋转表达加载中
-  const showMarketSkeleton = createMemo(() => isMarketDataLoading() && !marketData())
-  // 成交历史同理：加载中且无数据时显示骨架屏，而不是闪现「暂无历史数据」
-  const showHistorySkeleton = createMemo(() => {
-    const result = historyDataResult()
-    const stale = Boolean(result && (result.scope !== scope() || result.id !== itemId()))
-    return (historyDataResult.loading || stale) && history().length === 0
-  })
+  const history = createMemo(() => filterRowsByScope(historyMatched()?.entries ?? []))
   const showHistoryWorld = createMemo(() =>
     history().some((sale) => Boolean(sale.worldName) && sale.worldName !== scope())
   )
@@ -1506,6 +1562,18 @@ export default function ItemDetail() {
   const qualityRowClass = (q: 'nq' | 'hq') =>
     'transition-opacity ' + (qualityFilter() === q ? '' : 'opacity-40')
 
+  // 品质标签：HQ 始终用 badge（有效信号）；NQ 仅在物品可 HQ 时用 badge，
+  // 不可 HQ 的物品没有品质区分，退化为纯文本避免噪音
+  const canBeHqItem = createMemo(() => canItemBeHq(Number(itemId())))
+  const QualityTag = (props: { hq: boolean; class?: string }) => (
+    <Show
+      when={props.hq || canBeHqItem()}
+      fallback={<span class="text-muted-foreground">NQ</span>}
+    >
+      <QualityBadge hq={props.hq} class={props.class} />
+    </Show>
+  )
+
   // 品质行：badge + 最低挂单 + 价格分布条，双品质时整行可点击选择
   const QualityRow = (props: {
     hq: boolean
@@ -1527,7 +1595,7 @@ export default function ItemDetail() {
             : 'cursor-default')
         }
       >
-        <QualityBadge hq={props.hq} class="shrink-0" />
+        <QualityTag hq={props.hq} class="shrink-0" />
         <div class="w-32 shrink-0">
           <Show when={props.minListing} fallback={<span class="text-muted-foreground">-</span>}>
             <div class="flex items-baseline gap-1">
@@ -1626,24 +1694,13 @@ export default function ItemDetail() {
         </A>
 
         {/* 物品图标 */}
-        <Show when={getItemIconUrl(Number(itemId())).length > 0}>
-          <img
-            src={getItemIconUrl(Number(itemId()))[0]}
-            alt=""
-            class={
-              'rounded flex-shrink-0 transition-all duration-300 ' +
-              (isScrolled() ? 'h-6 w-6' : 'h-10 w-10')
-            }
-            onError={(e) => {
-              const urls = getItemIconUrl(Number(itemId()))
-              if (urls.length > 1) {
-                e.currentTarget.src = urls[1]
-              } else {
-                e.currentTarget.style.display = 'none'
-              }
-            }}
-          />
-        </Show>
+        <ItemIcon
+          itemId={Number(itemId())}
+          class={
+            'rounded flex-shrink-0 transition-all duration-300 ' +
+            (isScrolled() ? 'h-6 w-6' : 'h-10 w-10')
+          }
+        />
 
         {/* 物品信息 */}
         <div class="min-w-0 flex-1">
@@ -1742,7 +1799,7 @@ export default function ItemDetail() {
               {qualityToggle()}
               <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
               <RefreshButton
-                loading={marketDataResult.loading || historyDataResult.loading}
+                loading={market.loading() || historyRes.loading()}
                 onClick={handleRefresh}
                 class={isScrolled() ? 'size-6' : 'size-7'}
               />
@@ -1763,7 +1820,7 @@ export default function ItemDetail() {
               {qualityToggle()}
               <ScopeSelect value={scope()} onChange={setScope} region={selectedRegion()} />
               <RefreshButton
-                loading={marketDataResult.loading || historyDataResult.loading}
+                loading={market.loading() || historyRes.loading()}
                 onClick={handleRefresh}
                 class="size-7"
               />
@@ -1776,36 +1833,53 @@ export default function ItemDetail() {
         when={stats()}
         fallback={
           <Show
-            when={isMarketDataLoading()}
+            when={marketMatched() !== undefined}
             fallback={
-              <Card class="mb-6">
-                <CardContent>
-                  <EmptyState
-                    title="暂无市场数据"
-                    description="该物品在当前范围内没有挂单与成交记录，可尝试切换更大的数据范围"
-                  />
-                </CardContent>
-              </Card>
+              <Show
+                when={!market.error()}
+                fallback={
+                  <Card class="mb-6">
+                    <CardContent>
+                      <EmptyState
+                        variant="error"
+                        title="市场数据加载失败"
+                        description={market.error() ?? undefined}
+                        action={<RefreshButton loading={market.loading()} onClick={market.refetch} />}
+                      />
+                    </CardContent>
+                  </Card>
+                }
+              >
+                <Card class="mb-6" role="status">
+                  <span class="sr-only">加载中</span>
+                  <CardContent class="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-border">
+                    <div class="min-w-0 flex-1 space-y-3 sm:pr-6">
+                      <Skeleton class="h-3 w-28 px-2" />
+                      <For each={Array.from({ length: 2 })}>
+                        {() => (
+                          <div class="flex items-center gap-3 px-2">
+                            <Skeleton class="h-5 w-8" />
+                            <Skeleton class="h-8 w-24" />
+                            <Skeleton class="h-1.5 flex-1" />
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                    <div class="flex shrink-0 gap-8 sm:flex-col sm:gap-3 sm:pl-6">
+                      <div class="space-y-1.5"><Skeleton class="h-3 w-14" /><Skeleton class="h-5 w-20" /></div>
+                      <div class="space-y-1.5"><Skeleton class="h-3 w-14" /><Skeleton class="h-5 w-16" /></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Show>
             }
           >
             <Card class="mb-6">
-              <CardContent class="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-border">
-                <div class="min-w-0 flex-1 space-y-3 sm:pr-6">
-                  <Skeleton class="h-3 w-28 px-2" />
-                  <For each={Array.from({ length: 2 })}>
-                    {() => (
-                      <div class="flex items-center gap-3 px-2">
-                        <Skeleton class="h-5 w-8" />
-                        <Skeleton class="h-8 w-24" />
-                        <Skeleton class="h-1.5 flex-1" />
-                      </div>
-                    )}
-                  </For>
-                </div>
-                <div class="flex shrink-0 gap-8 sm:flex-col sm:gap-3 sm:pl-6">
-                  <div class="space-y-1.5"><Skeleton class="h-3 w-14" /><Skeleton class="h-5 w-20" /></div>
-                  <div class="space-y-1.5"><Skeleton class="h-3 w-14" /><Skeleton class="h-5 w-16" /></div>
-                </div>
+              <CardContent>
+                <EmptyState
+                  title="暂无市场数据"
+                  description="该物品在当前范围内没有挂单与成交记录，可尝试切换更大的数据范围"
+                />
               </CardContent>
             </Card>
           </Show>
@@ -1854,13 +1928,13 @@ export default function ItemDetail() {
                 <div class="mt-1 space-y-1 text-sm tabular-nums">
                   <Show when={stats()?.nqVelocity != null && stats()!.nqVelocity > 0}>
                     <div class={'flex items-center gap-1.5 ' + (bothQualities() ? qualityRowClass('nq') : '')}>
-                      <QualityBadge hq={false} />
+                      <QualityTag hq={false} />
                       <span class="font-medium">{formatDailySales(stats()!.nqVelocity)}</span>
                     </div>
                   </Show>
                   <Show when={stats()?.hqVelocity != null && stats()!.hqVelocity > 0}>
                     <div class={'flex items-center gap-1.5 ' + (bothQualities() ? qualityRowClass('hq') : '')}>
-                      <QualityBadge hq />
+                      <QualityTag hq />
                       <span class="font-medium">{formatDailySales(stats()!.hqVelocity)}</span>
                     </div>
                   </Show>
@@ -1895,39 +1969,81 @@ export default function ItemDetail() {
         </Card>
       </Show>
 
-      <Show when={!showMarketSkeleton()} fallback={<ListingChartSkeleton />}>
-        <Show when={filteredListings().length > 0}>
-          <Card class="mb-6 py-3">
-            <CardHeader class="pb-2">
-              <CardTitle class="text-sm">挂单价格分布</CardTitle>
-              <CardDescription class="text-xs">各服务器挂单价格可视化</CardDescription>
-            </CardHeader>
-            <CardContent class="pt-0">
+      {/* 失败时整区隐藏（错误由统计卡统一呈现）；加载成功但无挂单时
+          卡片保留、内容提示无数据，避免页面结构跳动 */}
+      <Show when={marketMatched() === undefined && !market.error()}>
+        <ListingChartSkeleton />
+      </Show>
+      <Show when={marketMatched() !== undefined}>
+        <Card class="mb-6 py-3">
+          <CardHeader class="pb-2">
+            <CardTitle class="text-sm">挂单价格分布</CardTitle>
+            <CardDescription class="text-xs">各服务器挂单价格可视化</CardDescription>
+          </CardHeader>
+          <CardContent class="pt-0">
+            <Show
+              when={filteredListings().length > 0}
+              fallback={
+                <EmptyState
+                  class="py-8"
+                  title="暂无挂单数据"
+                  description="该物品在当前范围内没有挂单"
+                />
+              }
+            >
               <Tabs value={listingChartTab()} onChange={setListingChartTab}>
                 <TabsList class="mb-4">
                   <TabsTrigger value="bar">条形图</TabsTrigger>
                   <TabsTrigger value="violin">小提琴图</TabsTrigger>
                 </TabsList>
                 <TabsContent value="bar">
-                  <ServerListingBarChart listings={filteredListings()} history={filteredHistory()} scope={scope()} historyLoading={showHistorySkeleton()} />
+                  <ServerListingBarChart listings={filteredListings()} history={filteredHistory()} scope={scope()} historyLoading={historyMatched() === undefined && !historyRes.error()} historyError={historyMatched() === undefined && Boolean(historyRes.error())} />
                 </TabsContent>
                 <TabsContent value="violin">
                   <ServerListingViolin listings={filteredListings()} scope={scope()} />
                 </TabsContent>
               </Tabs>
-            </CardContent>
-          </Card>
-        </Show>
+            </Show>
+          </CardContent>
+        </Card>
       </Show>
 
-      <Show when={filteredHistory().length > 0 || showHistorySkeleton()}>
-        <Show when={filteredHistory().length > 0} fallback={<ListingChartSkeleton />}>
-          <Card class="mb-6 py-3">
-            <CardHeader class="pb-2">
-              <CardTitle class="text-sm">交易走势</CardTitle>
-              <CardDescription class="text-xs">按服务器拆分的成交记录可视化</CardDescription>
-            </CardHeader>
-            <CardContent class="pt-0">
+      {/* 历史数据面的错误落点集中在此（成交历史 Tab 不再重复呈现）；
+          加载成功但无成交时卡片保留、内容提示无数据 */}
+      <Show
+        when={historyMatched() !== undefined}
+        fallback={
+          <Show
+            when={!historyRes.error()}
+            fallback={
+              <ChartErrorCard
+                title="历史成交加载失败"
+                description={historyRes.error() ?? undefined}
+                loading={historyRes.loading()}
+                onRetry={historyRes.refetch}
+              />
+            }
+          >
+            <ListingChartSkeleton />
+          </Show>
+        }
+      >
+        <Card class="mb-6 py-3">
+          <CardHeader class="pb-2">
+            <CardTitle class="text-sm">交易走势</CardTitle>
+            <CardDescription class="text-xs">按服务器拆分的成交记录可视化</CardDescription>
+          </CardHeader>
+          <CardContent class="pt-0">
+            <Show
+              when={filteredHistory().length > 0}
+              fallback={
+                <EmptyState
+                  class="py-8"
+                  title="暂无成交记录"
+                  description="该物品在当前范围内近期没有成交记录"
+                />
+              }
+            >
               <Tabs value={historyChartTab()} onChange={setHistoryChartTab}>
                 <TabsList class="mb-4">
                   <TabsTrigger value="line">走势</TabsTrigger>
@@ -1940,9 +2056,9 @@ export default function ItemDetail() {
                   <ServerHistoryScatterChart history={filteredHistory()} scope={scope()} />
                 </TabsContent>
               </Tabs>
-            </CardContent>
-          </Card>
-        </Show>
+            </Show>
+          </CardContent>
+        </Card>
       </Show>
 
       <div>
@@ -1953,142 +2069,154 @@ export default function ItemDetail() {
           </TabsList>
 
           <TabsContent value="listings">
-            <Card class="py-3">
-              <CardHeader class="pb-2">
-                <CardTitle class="text-sm">当前挂单</CardTitle>
-                <CardDescription class="text-xs">
-                  <Show when={!showMarketSkeleton()} fallback="正在加载挂单数据">
-                    共 {filteredListings().length} 个挂单
-                  </Show>
-                </CardDescription>
-              </CardHeader>
-              <CardContent class="pt-0">
-                <Show when={!showMarketSkeleton()} fallback={<ListingTableSkeleton />}>
+            {/* 无数据错误由统计卡统一呈现，本区域只在加载中或加载成功时渲染 */}
+            <Show when={marketMatched() !== undefined || !market.error()}>
+              <Card class="py-3">
+                <CardHeader class="pb-2">
+                  <CardTitle class="text-sm">当前挂单</CardTitle>
+                  <CardDescription class="text-xs">
+                    <Show when={marketMatched() !== undefined} fallback="正在加载挂单数据">
+                      共 {filteredListings().length} 个挂单
+                    </Show>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent class="pt-0">
                   <Show
-                    when={filteredListings().length > 0}
-                    fallback={
-                      <EmptyState
-                        title="暂无挂单数据"
-                        description="该物品在当前区域暂无挂单信息"
-                      />
-                    }
+                    when={marketMatched() !== undefined}
+                    fallback={<ListingTableSkeleton />}
                   >
-                    <Table>
-                      <TableHeader>
-                        <TableRow class="hover:bg-transparent">
-                          <TableHead>品质</TableHead>
-                          <TableHead>单价</TableHead>
-                          <TableHead>数量</TableHead>
-                          <TableHead>总价</TableHead>
-                          <TableHead>服务器</TableHead>
-                          <TableHead>雇员</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        <For each={filteredListings().slice(0, 50)}>
-                          {(listing) => (
-                            <TableRow>
-                              <TableCell>
-                                <QualityBadge hq={listing.hq} />
-                              </TableCell>
-                              <TableCell class="font-medium">
-                                {formatGil(listing.pricePerUnit)} Gil
-                              </TableCell>
-                              <TableCell>{listing.quantity}</TableCell>
-                              <TableCell class="font-medium">
-                                {formatGil(listing.total)} Gil
-                              </TableCell>
-                              <TableCell class="text-muted-foreground">
-                                <WorldBadge worldName={listing.worldName || scope()} />
-                              </TableCell>
-                              <TableCell class="text-muted-foreground">
-                                {listing.retainerName}
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </For>
-                      </TableBody>
-                    </Table>
+                    <Show
+                      when={filteredListings().length > 0}
+                      fallback={
+                        <EmptyState
+                          title="暂无挂单数据"
+                          description="该物品在当前区域暂无挂单信息"
+                        />
+                      }
+                    >
+                      <Table>
+                        <TableHeader>
+                          <TableRow class="hover:bg-transparent">
+                            <TableHead>品质</TableHead>
+                            <TableHead>单价</TableHead>
+                            <TableHead>数量</TableHead>
+                            <TableHead>总价</TableHead>
+                            <TableHead>服务器</TableHead>
+                            <TableHead>雇员</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <For each={filteredListings().slice(0, 50)}>
+                            {(listing) => (
+                              <TableRow>
+                                <TableCell>
+                                  <QualityTag hq={listing.hq} />
+                                </TableCell>
+                                <TableCell class="font-medium">
+                                  {formatGil(listing.pricePerUnit)} Gil
+                                </TableCell>
+                                <TableCell>{listing.quantity}</TableCell>
+                                <TableCell class="font-medium">
+                                  {formatGil(listing.total)} Gil
+                                </TableCell>
+                                <TableCell class="text-muted-foreground">
+                                  <WorldBadge worldName={listing.worldName || scope()} />
+                                </TableCell>
+                                <TableCell class="text-muted-foreground">
+                                  {listing.retainerName}
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </For>
+                        </TableBody>
+                      </Table>
+                    </Show>
                   </Show>
-                </Show>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </Show>
           </TabsContent>
 
           <TabsContent value="history">
-            <Card class="py-3">
-              <CardHeader class="pb-2">
-                <CardTitle class="text-sm">成交历史</CardTitle>
-                <CardDescription class="text-xs">
-                  <Show when={!showHistorySkeleton()} fallback="正在加载成交记录">
-                    近期 {filteredHistory().length} 笔成交记录
-                  </Show>
-                </CardDescription>
-              </CardHeader>
-              <CardContent class="pt-0">
-                <Suspense fallback={<Skeleton class="h-[400px]" />}>
+            {/* 无数据错误由上方走势图区域统一呈现，本区域只在加载中或加载成功时渲染 */}
+            <Show when={historyMatched() !== undefined || !historyRes.error()}>
+              <Card class="py-3">
+                <CardHeader class="pb-2">
+                  <CardTitle class="text-sm">成交历史</CardTitle>
+                  <CardDescription class="text-xs">
+                    <Show when={historyMatched() !== undefined} fallback="正在加载成交记录">
+                      近期 {filteredHistory().length} 笔成交记录
+                    </Show>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent class="pt-0">
                   <Show
-                    when={filteredHistory().length > 0}
+                    when={historyMatched() !== undefined}
                     fallback={
-                      <Show
-                        when={!showHistorySkeleton()}
-                        fallback={<Skeleton class="h-[400px]" />}
-                      >
+                      <div role="status">
+                        <span class="sr-only">加载中</span>
+                        <Skeleton class="h-[400px]" />
+                      </div>
+                    }
+                  >
+                    <Show
+                      when={filteredHistory().length > 0}
+                      fallback={
                         <EmptyState
                           title="暂无历史数据"
                           description="该物品在当前区域暂无历史成交记录"
                         />
-                      </Show>
-                    }
-                  >
-                    <Table>
-                      <TableHeader>
-                        <TableRow class="hover:bg-transparent">
-                          <TableHead>品质</TableHead>
-                          <TableHead>单价</TableHead>
-                          <TableHead>数量</TableHead>
-                          <TableHead>总价</TableHead>
-                          <TableHead>买家</TableHead>
-                          <Show when={showHistoryWorld()}>
-                            <TableHead>服务器</TableHead>
-                          </Show>
-                          <TableHead>时间</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        <For each={filteredHistory().slice(0, 30)}>
-                          {(sale) => (
-                            <TableRow>
-                              <TableCell>
-                                <QualityBadge hq={sale.hq} />
-                              </TableCell>
-                              <TableCell class="font-medium">
-                                {formatGil(sale.pricePerUnit)} Gil
-                              </TableCell>
-                              <TableCell>{sale.quantity}</TableCell>
-                              <TableCell class="font-medium">
-                                {formatGil(sale.total)} Gil
-                              </TableCell>
-                              <TableCell class="text-muted-foreground">
-                                {sale.buyerName || '-'}
-                              </TableCell>
-                              <Show when={showHistoryWorld()}>
-                                <TableCell class="text-muted-foreground">
-                                  <WorldBadge worldName={sale.worldName} />
+                      }
+                    >
+                      <Table>
+                        <TableHeader>
+                          <TableRow class="hover:bg-transparent">
+                            <TableHead>品质</TableHead>
+                            <TableHead>单价</TableHead>
+                            <TableHead>数量</TableHead>
+                            <TableHead>总价</TableHead>
+                            <TableHead>买家</TableHead>
+                            <Show when={showHistoryWorld()}>
+                              <TableHead>服务器</TableHead>
+                            </Show>
+                            <TableHead>时间</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <For each={filteredHistory().slice(0, 30)}>
+                            {(sale) => (
+                              <TableRow>
+                                <TableCell>
+                                  <QualityTag hq={sale.hq} />
                                 </TableCell>
-                              </Show>
-                              <TableCell class="text-muted-foreground text-xs">
-                                {new Date(sale.timestamp * 1000).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </For>
-                      </TableBody>
-                    </Table>
+                                <TableCell class="font-medium">
+                                  {formatGil(sale.pricePerUnit)} Gil
+                                </TableCell>
+                                <TableCell>{sale.quantity}</TableCell>
+                                <TableCell class="font-medium">
+                                  {formatGil(sale.total)} Gil
+                                </TableCell>
+                                <TableCell class="text-muted-foreground">
+                                  {sale.buyerName || '-'}
+                                </TableCell>
+                                <Show when={showHistoryWorld()}>
+                                  <TableCell class="text-muted-foreground">
+                                    <WorldBadge worldName={sale.worldName} />
+                                  </TableCell>
+                                </Show>
+                                <TableCell class="text-muted-foreground text-xs">
+                                  {new Date(sale.timestamp * 1000).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </For>
+                        </TableBody>
+                      </Table>
+                    </Show>
                   </Show>
-                </Suspense>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </Show>
           </TabsContent>
         </Tabs>
       </div>
