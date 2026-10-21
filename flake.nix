@@ -22,7 +22,15 @@
           bunDeps = pkgs.stdenv.mkDerivation {
             pname = "xiv-market-bun-deps";
             version = "0.0.0";
-            src = ./.;
+            src = builtins.path {
+              path = ./.;
+              filter =
+                path: _type:
+                let
+                  name = builtins.baseNameOf path;
+                in
+                name != "flake.nix" && name != "flake.lock" && name != ".git";
+            };
             nativeBuildInputs = [
               pkgs.bun
               pkgs.nodejs_24
@@ -45,7 +53,13 @@
             '';
             outputHashMode = "recursive";
             outputHashAlgo = "sha256";
-            outputHash = "sha256-2XES+6csFylElQLXhGB9IHs6XiVpvbwbM/WmBA5ouNQ=";
+            outputHash =
+              {
+                x86_64-linux = "sha256-bAoKsGJv6eNSOcsVDYvmk0p7X7lxYD4JBUGLBShfQI0=";
+                aarch64-darwin = "sha256-pAc/mYJHtvQfjxccLnZ9ZBfTIsTix/NjZxSXlrWu86s=";
+              }
+              .${pkgs.stdenv.hostPlatform.system}
+                or (throw "xiv-market bun dependencies hash is not pinned for ${pkgs.stdenv.hostPlatform.system}");
           };
         in
         pkgs.stdenv.mkDerivation {
