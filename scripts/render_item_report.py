@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Local server port. Defaults to {DEFAULT_PORT}.")
     parser.add_argument("--keep-server", action="store_true", help="Keep the local Vite server alive.")
     parser.add_argument("--browser", help="Browser executable path. Defaults to PLAYWRIGHT_BROWSER, then bundled Chromium.")
+    parser.add_argument("--items", default=str(ROOT / "app/public/items.json"), help="Path to xiv-market app/public/items.json.")
     parser.add_argument("--debug", action="store_true", help="Print renderer progress to stderr.")
     return parser.parse_args()
 
@@ -37,17 +38,17 @@ def debug(enabled: bool, message: str) -> None:
         print(f"[render:item] {message}", file=sys.stderr, flush=True)
 
 
-def load_items() -> dict[str, dict[str, object]]:
-    with (ROOT / "app/public/items.json").open("r", encoding="utf-8") as f:
+def load_items(path: Path) -> dict[str, dict[str, object]]:
+    with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def resolve_item_id(raw: str) -> str:
+def resolve_item_id(raw: str, items_path: Path) -> str:
     item = raw.strip()
     if item.isdigit():
         return item
 
-    items = load_items()
+    items = load_items(items_path)
     normalized = normalize_item_name(item)
     exact = [(item_id, info) for item_id, info in items.items() if normalize_item_name(str(info.get("name", ""))) == normalized]
     if exact:
@@ -219,7 +220,7 @@ def launch_browser(playwright, browser_path: str | None, debug_enabled: bool):
 
 
 def render_report(args: argparse.Namespace) -> dict[str, str]:
-    item_id = resolve_item_id(args.item)
+    item_id = resolve_item_id(args.item, Path(args.items))
     server: subprocess.Popen[bytes] | None = None
 
     try:
