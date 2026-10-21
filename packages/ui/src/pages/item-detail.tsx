@@ -1,8 +1,10 @@
-import { createMemo, createSignal, createEffect, Show, For, on, onMount, onCleanup } from 'solid-js'
+import { createResource, createMemo, createSignal, createEffect, Show, For, on, onMount, onCleanup } from 'solid-js'
 import { useParams, A, useSearchParams } from '@solidjs/router'
-import { fetchMarketData, fetchHistoryData, createQueryResource, matchedData, selectedRegion, dataCenters, worlds, worldsReady, worldsLoadFailed, getItemName, canItemBeHq, getDcNameByWorldName, getWorldName, getDcColorHex, baseUrl } from '@xiv-market/shared'
+import { fetchMarketData, fetchHistoryData, fetchDataCenters, fetchWorlds, setDataCenters, setWorlds, createQueryResource, matchedData, selectedRegion, dataCenters, worlds, worldsReady, worldsLoadFailed, getItemName, getItemIconUrl, canItemBeHq, getDcNameByWorldName, getWorldName, getDcColorHex, baseUrl } from '@xiv-market/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
 import { Button } from '../button'
+import { Badge } from '../badge'
+import { StatCard } from '../stat-card'
 import { QualityBadge } from '../quality-badge'
 import { Skeleton } from '../skeleton'
 import { Table, TableBody, TableRow, TableHead, TableCell, TableHeader } from '../table'
@@ -139,6 +141,91 @@ function percentile(sortedValues: number[], ratio: number): number {
   if (!sortedValues.length) return 0
   const index = Math.floor((sortedValues.length - 1) * ratio)
   return sortedValues[index]
+}
+
+
+function readSearchParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0]?.trim() ?? ''
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function buildWorldNameById(): Map<number, string> {
+  const map = new Map<number, string>()
+  for (const world of worlds) {
+    map.set(world.id, world.name)
+  }
+  return map
+}
+
+function getScopedWorldNames(scopeValue: string, worldNameById: Map<number, string>): Set<string> {
+  const regionDcs = dataCenters.filter((dc) => dc.region === scopeValue)
+  if (regionDcs.length) {
+    const names = new Set<string>()
+    for (const dc of regionDcs) {
+      for (const worldId of dc.worlds) {
+        const name = worldNameById.get(worldId)
+        if (name) names.add(name)
+      }
+    }
+    return names
+  }
+
+  const dc = dataCenters.find((d) => d.name === scopeValue)
+  if (dc) {
+    const names = new Set<string>()
+    for (const worldId of dc.worlds) {
+      const name = worldNameById.get(worldId)
+      if (name) names.add(name)
+    }
+    return names
+  }
+
+  return new Set([scopeValue])
+}
+
+function filterRowsForScope<T extends { worldName?: string }>(
+  rows: T[],
+  scopeValue: string,
+  worldNameById: Map<number, string>,
+): T[] {
+  const names = getScopedWorldNames(scopeValue, worldNameById)
+  return rows.filter((row) => {
+    if (row.worldName) return names.has(row.worldName)
+    return names.size === 1 && names.has(scopeValue)
+  })
+}
+
+function computeItemStats(data: any | null, listings: any[], scopeValue: string) {
+  if (!data) return null
+  const prices = listings
+    .map((listing) => Number(listing.pricePerUnit ?? 0))
+    .filter((price) => Number.isFinite(price) && price > 0)
+    .sort((a, b) => a - b)
+  const minListing = listings
+    .filter((listing) => Number.isFinite(Number(listing.pricePerUnit)) && Number(listing.pricePerUnit) > 0)
+    .slice()
+    .sort((a, b) => {
+      const priceDiff = Number(a.pricePerUnit) - Number(b.pricePerUnit)
+      if (priceDiff !== 0) return priceDiff
+      return Number(a.total ?? 0) - Number(b.total ?? 0)
+    })[0]
+  const minListingWorld = minListing?.worldName || ''
+  const minListingDc = getDcNameByWorldName(minListingWorld) || ''
+
+  return {
+    velocity: data.regularSaleVelocity,
+    nqVelocity: data.nqSaleVelocity,
+    hqVelocity: data.hqSaleVelocity,
+    lastUploadTime: data.lastUploadTime,
+    listingCount: listings.length,
+    minListing,
+    minListingWorld,
+    minListingDc,
+    p25: percentile(prices, 0.25),
+    p50: percentile(prices, 0.5),
+    p75: percentile(prices, 0.75),
+    scope: scopeValue,
+  }
 }
 
 function formatTime(ts: number): string {
@@ -2219,6 +2306,227 @@ export default function ItemDetail() {
             </Show>
           </TabsContent>
         </Tabs>
+      </div>
+    </div>
+  )
+}
+
+export function ItemRender() {
+  const params = useParams()
+  const [searchParams] = useSearchParams()
+  const itemId = createMemo(() => params.id)
+  const scope = createMemo(() => readSearchParam(searchParams.scope) || selectedRegion())
+  const sourceUrl = createMemo(() => {
+    const hash = `/item/${itemId()}?scope=${encodeURIComponent(scope())}`
+    return `${window.location.origin}${window.location.pathname}#${hash}`
+  })
+
+  const [dataCentersRes] = createResource(() => fetchDataCenters())
+  const [worldsRes] = createResource(() => fetchWorlds())
+
+  createEffect(() => {
+    if (dataCentersRes()) setDataCenters(dataCentersRes()!)
+  })
+
+  createEffect(() => {
+    if (worldsRes()) setWorlds(worldsRes()!)
+  })
+
+  const worldNameById = createMemo(() => buildWorldNameById())
+  const filterRowsByScope = <T extends { worldName?: string }>(rows: T[]) => (
+    filterRowsForScope(rows, scope(), worldNameById())
+  )
+
+  const [marketDataResult] = createResource(
+    () => {
+      const id = itemId()
+      if (!id) return null
+      return { scope: scope(), id }
+    },
+    async ({ scope: s, id }: { scope: string; id: string }) => ({
+      scope: s,
+      id,
+      data: await fetchMarketData(s, id),
+    })
+  )
+
+  const [historyDataResult] = createResource(
+    () => {
+      const id = itemId()
+      if (!id) return null
+      return { scope: scope(), id }
+    },
+    async ({ scope: s, id }: { scope: string; id: string }) => ({
+      scope: s,
+      id,
+      data: await fetchHistoryData(s, id),
+    })
+  )
+
+  const marketData = createMemo(() => {
+    const result = marketDataResult()
+    if (!result || result.scope !== scope() || result.id !== itemId()) return null
+    const id = Number(itemId())
+    return result.data[id] ?? null
+  })
+  const currentListings = createMemo(() => filterRowsByScope(marketData()?.listings ?? []))
+  const history = createMemo(() => {
+    const result = historyDataResult()
+    if (!result || result.scope !== scope() || result.id !== itemId()) return []
+    return filterRowsByScope(result.data.entries ?? [])
+  })
+  const stats = createMemo(() => computeItemStats(marketData(), currentListings(), scope()))
+  const isReady = createMemo(() => (
+    !dataCentersRes.loading &&
+    !worldsRes.loading &&
+    !marketDataResult.loading &&
+    !historyDataResult.loading &&
+    Boolean(marketData())
+  ))
+
+  return (
+    <div class="min-h-screen bg-background text-foreground">
+      <div
+        data-render-root="item-report"
+        data-render-ready={isReady() ? 'true' : 'false'}
+        class="w-[1120px] bg-background px-8 py-7"
+      >
+        <div class="mb-5 flex items-start justify-between gap-5 border-b pb-4">
+          <div class="flex min-w-0 items-start gap-3">
+            <Show when={getItemIconUrl(Number(itemId())).length > 0}>
+              <img
+                src={getItemIconUrl(Number(itemId()))[0]}
+                alt=""
+                class="h-12 w-12 shrink-0 rounded"
+                onError={(e) => {
+                  const urls = getItemIconUrl(Number(itemId()))
+                  if (urls.length > 1) {
+                    e.currentTarget.src = urls[1]
+                  } else {
+                    e.currentTarget.style.display = 'none'
+                  }
+                }}
+              />
+            </Show>
+            <div class="min-w-0">
+              <div class="text-2xl font-semibold leading-tight">{getItemName(Number(itemId()))}</div>
+              <div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                <span>#{itemId()}</span>
+                <span>{scope()}</span>
+                <span>{new Date().toLocaleString('zh-CN')}</span>
+              </div>
+            </div>
+          </div>
+          <div class="max-w-[420px] truncate text-right text-xs text-muted-foreground">
+            {sourceUrl()}
+          </div>
+        </div>
+
+        <Show
+          when={isReady()}
+          fallback={
+            <div class="space-y-4" aria-busy="true">
+              <Skeleton class="h-24 w-full" />
+              <Skeleton class="h-80 w-full" />
+              <Skeleton class="h-80 w-full" />
+            </div>
+          }
+        >
+          <div class="mb-5 grid grid-cols-4 gap-3">
+            <StatCard title="最低挂单">
+              <Show
+                when={stats()?.minListing}
+                fallback={<span class="text-muted-foreground">-</span>}
+              >
+                {(listing) => (
+                  <div class="space-y-1">
+                    <div class="flex items-baseline gap-1.5">
+                      <span class="text-xl font-semibold tabular-nums">{formatGil(listing().pricePerUnit)}</span>
+                      <span class="text-xs text-muted-foreground">Gil</span>
+                      <Badge variant={listing().hq ? 'default' : 'secondary'}>
+                        {listing().hq ? 'HQ' : 'NQ'}
+                      </Badge>
+                    </div>
+                    <div class="text-xs leading-snug text-muted-foreground">
+                      <div>{stats()?.minListingWorld || scope()}</div>
+                      <Show when={stats()?.minListingDc}>
+                        <div>{stats()?.minListingDc}</div>
+                      </Show>
+                    </div>
+                  </div>
+                )}
+              </Show>
+            </StatCard>
+            <StatCard title="价格分布">
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <div class="text-[10px] text-muted-foreground">P25</div>
+                  <div class="text-sm font-medium tabular-nums">{stats()?.p25 ? formatAxisGil(stats()!.p25) : '-'}</div>
+                </div>
+                <div>
+                  <div class="text-[10px] text-muted-foreground">P50</div>
+                  <div class="text-sm font-semibold text-amber-500 tabular-nums">{stats()?.p50 ? formatAxisGil(stats()!.p50) : '-'}</div>
+                </div>
+                <div>
+                  <div class="text-[10px] text-muted-foreground">P75</div>
+                  <div class="text-sm font-medium tabular-nums">{stats()?.p75 ? formatAxisGil(stats()!.p75) : '-'}</div>
+                </div>
+              </div>
+            </StatCard>
+            <StatCard title="日销量">
+              <div class="flex flex-col leading-snug">
+                <Show when={stats()?.nqVelocity != null && stats()!.nqVelocity > 0}>
+                  <span class="text-muted-foreground text-xs">NQ <span class="font-medium text-foreground">{stats()?.nqVelocity.toFixed(2)}</span> /天</span>
+                </Show>
+                <Show when={stats()?.hqVelocity != null && stats()!.hqVelocity > 0}>
+                  <span class="text-xs">HQ <span class="font-medium">{stats()?.hqVelocity.toFixed(2)}</span> /天</span>
+                </Show>
+                <Show when={(stats()?.nqVelocity ?? 0) === 0 && (stats()?.hqVelocity ?? 0) === 0}>
+                  <span class="text-muted-foreground">-</span>
+                </Show>
+              </div>
+            </StatCard>
+            <StatCard title="挂单概况">
+              <div class="flex flex-col leading-snug">
+                <span class="text-xl font-semibold tabular-nums">
+                  {stats()?.listingCount.toLocaleString('zh-CN')}
+                </span>
+                <span class="text-xs text-muted-foreground">当前范围挂单数</span>
+                <Show when={stats()?.lastUploadTime}>
+                  <span class="text-xs text-muted-foreground mt-1">
+                    更新于 {formatTime(stats()?.lastUploadTime ?? 0)}
+                  </span>
+                </Show>
+              </div>
+            </StatCard>
+          </div>
+
+          <div class="grid gap-5">
+            <Show when={currentListings().length > 0}>
+              <Card class="py-3" data-render-card="listing-distribution">
+                <CardHeader class="pb-2">
+                  <CardTitle class="text-sm">挂单价格分布</CardTitle>
+                  <CardDescription class="text-xs">各服务器挂单价格可视化</CardDescription>
+                </CardHeader>
+                <CardContent class="pt-0">
+                  <ServerListingBarChart listings={currentListings()} history={history()} scope={scope()} historyLoading={false} />
+                </CardContent>
+              </Card>
+            </Show>
+
+            <Show when={history().length > 0}>
+              <Card class="py-3" data-render-card="history-trend">
+                <CardHeader class="pb-2">
+                  <CardTitle class="text-sm">交易走势</CardTitle>
+                  <CardDescription class="text-xs">最近 30 天成交价格与成交量</CardDescription>
+                </CardHeader>
+                <CardContent class="pt-0">
+                  <ServerHistoryTrendChart history={history()} />
+                </CardContent>
+              </Card>
+            </Show>
+          </div>
+        </Show>
       </div>
     </div>
   )

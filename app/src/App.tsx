@@ -10,6 +10,7 @@ import { Navbar } from '@xiv-market/ui/navbar'
 const HomePage = lazy(() => import('@xiv-market/ui/pages/home'))
 const MateriaPage = lazy(() => import('@xiv-market/ui/pages/materia'))
 const ItemDetailPage = lazy(() => import('@xiv-market/ui/pages/item-detail'))
+const ItemRenderPage = lazy(() => import('@xiv-market/ui/pages/item-detail').then(m => ({ default: m.ItemRender })))
 const SettingsPage = lazy(() => import('@xiv-market/ui/pages/settings'))
 
 function Layout(props: { children?: any }) {
@@ -44,11 +45,14 @@ function Layout(props: { children?: any }) {
 
 export default function App() {
   return (
-    <HashRouter root={Layout}>
-      <Route path="/" component={HomePage} />
-      <Route path="/materia" component={MateriaPage} />
-      <Route path="/item/:id" component={ItemDetailPage} />
-      <Route path="/settings" component={SettingsPage} />
+    <HashRouter>
+      <Route path="/render/item/:id" component={ItemRenderPage} />
+      <Route path="/" component={Layout}>
+        <Route path="/" component={HomePage} />
+        <Route path="/materia" component={MateriaPage} />
+        <Route path="/item/:id" component={ItemDetailPage} />
+        <Route path="/settings" component={SettingsPage} />
+      </Route>
     </HashRouter>
   )
 }
