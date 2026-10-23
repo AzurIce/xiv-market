@@ -53,3 +53,10 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+/* Snapshots capture final styles immediately; the live page keeps its motion. */
+[data-render-root="item-report"] *,
+[data-render-root="item-report"] *::before,
+[data-render-root="item-report"] *::after {
+  animation: none !important;
+  transition: none !important;
+}

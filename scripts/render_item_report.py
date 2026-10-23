@@ -149,12 +149,13 @@ def render_report(args: argparse.Namespace) -> dict[str, str]:
                 page.wait_for_function(
                     """() => {
                       const el = document.querySelector('[data-render-root="item-report"]');
-                      return el?.getAttribute('data-render-ready') === 'true';
+                      return el?.getAttribute('data-render-ready') === 'true' || Boolean(el?.getAttribute('data-render-error'));
                     }""",
                     timeout=60_000,
                 )
-                debug(args.debug, "render ready; waiting for chart paint")
-                page.wait_for_timeout(750)
+                render_error = root.get_attribute("data-render-error")
+                if render_error:
+                    raise RuntimeError(render_error)
                 debug(args.debug, f"writing {out_path}")
                 root.screenshot(path=str(out_path), animations="disabled")
             finally:

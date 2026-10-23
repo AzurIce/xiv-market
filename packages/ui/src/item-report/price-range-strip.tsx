@@ -148,7 +148,7 @@ export function PriceRangeStrip(props: {
         }
 
   return (
-    <div ref={rootRef}>
+    <div ref={rootRef} data-layout-ready={stripWidth() > 0 ? "true" : "false"}>
       {/* P50 与最低挂单的标签放在条的上方，避免与下方 P25/P75 标签重叠 */}
       <div class="relative mb-1.5 h-6">
         <For each={topLabels()}>

@@ -25,6 +25,7 @@ export interface ItemReportViewProps {
   quality?: MarketQuality
   onQualityChange?: (quality: MarketQuality) => void
   showDetails?: boolean
+  animateCharts?: boolean
   sticky?: boolean
   backLink?: JSX.Element
   actions?: (compact: boolean) => JSX.Element
@@ -514,7 +515,7 @@ export function ItemReportView(props: ItemReportViewProps) {
                   <ServerListingBarChart directory={directory()} listings={filteredListings()} history={filteredHistory()} scope={scope()} historyLoading={props.history.data === undefined && !props.history.error} historyError={props.history.data === undefined && Boolean(props.history.error)} />
                 </TabsContent>
                 <TabsContent value="violin">
-                  <ServerListingViolin directory={directory()} listings={filteredListings()} scope={scope()} />
+                  <ServerListingViolin animate={props.animateCharts} directory={directory()} listings={filteredListings()} scope={scope()} />
                 </TabsContent>
               </Tabs>
             </Show>
@@ -564,10 +565,10 @@ export function ItemReportView(props: ItemReportViewProps) {
                   <TabsTrigger value="scatter">散点</TabsTrigger>
                 </TabsList>
                 <TabsContent value="line">
-                  <ServerHistoryTrendChart history={filteredHistory()} />
+                  <ServerHistoryTrendChart animate={props.animateCharts} history={filteredHistory()} />
                 </TabsContent>
                 <TabsContent value="scatter">
-                  <ServerHistoryScatterChart directory={directory()} history={filteredHistory()} scope={scope()} />
+                  <ServerHistoryScatterChart animate={props.animateCharts} directory={directory()} history={filteredHistory()} scope={scope()} />
                 </TabsContent>
               </Tabs>
             </Show>

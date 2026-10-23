@@ -237,7 +237,7 @@ export function ChartErrorCard(props: { title: string; description?: string; loa
 // chart.js 动态 import 失败时的图内错误行（图表代码包加载失败，与数据无关）
 function ChartLoadError(props: { onRetry: () => void }) {
   return (
-    <div class="flex h-[240px] sm:h-[320px] w-full flex-col items-center justify-center gap-2" role="alert">
+    <div class="flex h-[240px] sm:h-[320px] w-full flex-col items-center justify-center gap-2" role="alert" data-chart-state="error">
       <p class="text-sm text-muted-foreground">图表加载失败</p>
       <Button variant="link" size="sm" class="h-auto p-0" onClick={props.onRetry}>
         重试
@@ -307,16 +307,19 @@ function SalesTrendIcon(props: { trend: SalesTrend }) {
   return <span class="inline-block size-3.5 shrink-0 text-center text-muted-foreground" aria-label="销量持平">-</span>
 }
 
-export function ServerListingViolin(props: { directory: WorldDirectory; listings: any[]; scope: string }) {
+export function ServerListingViolin(props: { directory: WorldDirectory; listings: any[]; scope: string; animate?: boolean }) {
   const { getScopeKind, getChartGroupName, getChartGroupOrder, getChartGroupColor, filterOutliers, getDcNameByWorldName } = createChartHelpers(() => props.directory)
   let canvasRef!: HTMLCanvasElement
   const [loadError, setLoadError] = createSignal(false)
+  const [renderState, setRenderState] = createSignal('loading')
 
   createEffect(() => {
     const listings = props.listings
     const scope = props.scope
     if (loadError()) return
     if (!canvasRef || !listings?.length) return
+    const animate = props.animate !== false
+    setRenderState('loading')
 
     let chart: { destroy: () => void } | undefined
     let disposed = false
@@ -332,7 +335,7 @@ export function ServerListingViolin(props: { directory: WorldDirectory; listings
       if (existing) existing.destroy()
 
       const ctx = canvasRef.getContext('2d')
-      if (!ctx) return
+      if (!ctx) throw new Error('Canvas 2D context is unavailable')
 
       const byServer: Record<string, number[]> = {}
       for (const l of listings) {
@@ -369,6 +372,7 @@ export function ServerListingViolin(props: { directory: WorldDirectory; listings
       }
 
       chart = new Chart(ctx, {
+        plugins: [{ id: 'report-readiness', afterRender: () => { if (!disposed) setRenderState('ready') } }],
         type: 'violin' as any,
         data: {
           labels: servers,
@@ -383,6 +387,7 @@ export function ServerListingViolin(props: { directory: WorldDirectory; listings
           ],
         },
         options: {
+          animation: animate ? undefined : false,
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
@@ -453,14 +458,14 @@ export function ServerListingViolin(props: { directory: WorldDirectory; listings
 
       if (disposed) chart.destroy()
     }).catch(() => {
-      if (!disposed) setLoadError(true)
+      if (!disposed) { setRenderState('error'); setLoadError(true) }
     })
   })
 
   return (
     <Show when={!loadError()} fallback={<ChartLoadError onRetry={() => setLoadError(false)} />}>
       <div class="h-[240px] sm:h-[320px] w-full" role="img" aria-label="服务器挂单价格小提琴图">
-        <canvas ref={canvasRef} aria-hidden="true" />
+        <canvas ref={canvasRef} aria-hidden="true" data-chart-state={renderState()} />
       </div>
     </Show>
   )
@@ -791,14 +796,17 @@ export function ServerListingBarChart(props: { directory: WorldDirectory; listin
   )
 }
 
-export function ServerHistoryTrendChart(props: { history: any[] }) {
+export function ServerHistoryTrendChart(props: { history: any[]; animate?: boolean }) {
   let canvasRef!: HTMLCanvasElement
   const [loadError, setLoadError] = createSignal(false)
+  const [renderState, setRenderState] = createSignal('loading')
 
   createEffect(() => {
     const data = props.history
     if (loadError()) return
     if (!canvasRef || !data?.length) return
+    const animate = props.animate !== false
+    setRenderState('loading')
 
     let chart: { destroy: () => void } | undefined
     let disposed = false
@@ -814,7 +822,7 @@ export function ServerHistoryTrendChart(props: { history: any[] }) {
       if (existing) existing.destroy()
 
       const ctx = canvasRef.getContext('2d')
-      if (!ctx) return
+      if (!ctx) throw new Error('Canvas 2D context is unavailable')
 
       const byDay: Record<string, { prices: number[]; volume: number }> = {}
       for (const h of data) {
@@ -839,6 +847,7 @@ export function ServerHistoryTrendChart(props: { history: any[] }) {
       const volumes = days.map(d => byDay[d].volume)
 
       chart = new Chart(ctx, {
+        plugins: [{ id: 'report-readiness', afterRender: () => { if (!disposed) setRenderState('ready') } }],
         type: 'line',
         data: {
           labels: dayLabels,
@@ -882,6 +891,7 @@ export function ServerHistoryTrendChart(props: { history: any[] }) {
           ],
         },
         options: {
+          animation: animate ? undefined : false,
           responsive: true,
           maintainAspectRatio: false,
           interaction: { intersect: false, mode: 'index' },
@@ -932,29 +942,32 @@ export function ServerHistoryTrendChart(props: { history: any[] }) {
 
       if (disposed) chart.destroy()
     }).catch(() => {
-      if (!disposed) setLoadError(true)
+      if (!disposed) { setRenderState('error'); setLoadError(true) }
     })
   })
 
   return (
     <Show when={!loadError()} fallback={<ChartLoadError onRetry={() => setLoadError(false)} />}>
       <div class="h-[240px] sm:h-[320px] w-full" role="img" aria-label="服务器历史价格走势图">
-        <canvas ref={canvasRef} aria-hidden="true" />
+        <canvas ref={canvasRef} aria-hidden="true" data-chart-state={renderState()} />
       </div>
     </Show>
   )
 }
 
-export function ServerHistoryScatterChart(props: { directory: WorldDirectory; history: any[]; scope: string }) {
+export function ServerHistoryScatterChart(props: { directory: WorldDirectory; history: any[]; scope: string; animate?: boolean }) {
   const { getScopeKind, getChartGroupName, getChartGroupOrder, getChartGroupColor } = createChartHelpers(() => props.directory)
   let canvasRef!: HTMLCanvasElement
   const [loadError, setLoadError] = createSignal(false)
+  const [renderState, setRenderState] = createSignal('loading')
 
   createEffect(() => {
     const data = props.history
     const scope = props.scope
     if (loadError()) return
     if (!canvasRef || !data?.length) return
+    const animate = props.animate !== false
+    setRenderState('loading')
 
     let chart: { destroy: () => void } | undefined
     let disposed = false
@@ -970,7 +983,7 @@ export function ServerHistoryScatterChart(props: { directory: WorldDirectory; hi
       if (existing) existing.destroy()
 
       const ctx = canvasRef.getContext('2d')
-      if (!ctx) return
+      if (!ctx) throw new Error('Canvas 2D context is unavailable')
 
       const now = Date.now()
       const day7Ago = now - 7 * 24 * 60 * 60 * 1000
@@ -1024,9 +1037,11 @@ export function ServerHistoryScatterChart(props: { directory: WorldDirectory; hi
       }
 
       chart = new Chart(ctx, {
+        plugins: [{ id: 'report-readiness', afterRender: () => { if (!disposed) setRenderState('ready') } }],
         type: 'scatter',
         data: { datasets },
         options: {
+          animation: animate ? undefined : false,
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
@@ -1088,14 +1103,14 @@ export function ServerHistoryScatterChart(props: { directory: WorldDirectory; hi
 
       if (disposed) chart.destroy()
     }).catch(() => {
-      if (!disposed) setLoadError(true)
+      if (!disposed) { setRenderState('error'); setLoadError(true) }
     })
   })
 
   return (
     <Show when={!loadError()} fallback={<ChartLoadError onRetry={() => setLoadError(false)} />}>
       <div class="h-[240px] sm:h-[300px] w-full" role="img" aria-label="服务器历史成交散点图">
-        <canvas ref={canvasRef} aria-hidden="true" />
+        <canvas ref={canvasRef} aria-hidden="true" data-chart-state={renderState()} />
       </div>
     </Show>
   )

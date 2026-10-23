@@ -275,3 +275,5 @@ export default function MyPage() {
 - [Universalis API 文档](https://docs.universalis.app/)
 - [shadcn-solid](https://github.com/hngngn/shadcn-solid) — Solid.js 版 shadcn/ui
 - [Kobalte Docs](https://kobalte.dev/docs/core/overview/introduction) — 无障碍组件原语
+
+截图的 `data-render-ready` 必须代表绘制完成：图表 `afterRender`、PriceRangeStrip 测量、字体与图片解码完成，且连续两帧布局稳定。新增异步绘图应接入就绪标记。截图图表通过 `animateCharts={false}` 绘制最终帧，不改变正常网页的动画；不得用固定毫秒等待代替渲染就绪。

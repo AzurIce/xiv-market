@@ -100,3 +100,5 @@ bun run check-report
 ## License
 
 MIT
+
+截图就绪由 `data-render-ready` 通知：可见图表的 `afterRender` 完成、布局测量完成、字体与图片解码完成后，再确认连续两帧布局稳定。截图关闭动画，正常网页保留动画；图表或图片失败时通过 `data-render-error` 返回错误，不输出未完成的图片。调用方等待就绪后可直接截图，无需固定 750ms 等待。`bun run check-render-ready` 验证慢图表、慢图片、慢字体、图标回退、绘制失败和稳定帧；需要匹配的 Playwright / Chromium，以及 `fc-match` 和可加载的本机字体。
