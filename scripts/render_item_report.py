@@ -6,7 +6,6 @@ import os
 import subprocess
 import sys
 import time
-from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -21,14 +20,13 @@ WINDOWS_PLAYWRIGHT_CHROMIUM = Path.home() / "AppData/Local/ms-playwright/chromiu
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render an XIV Market item report PNG.")
-    parser.add_argument("--item", "-i", required=True, help="Item id, exact name, or unambiguous partial name.")
-    parser.add_argument("--scope", "-s", default="中国", help="Universalis scope. Defaults to 中国.")
+    parser.add_argument("--data", "-d", required=True, help="Path to an ItemReport JSON file.")
+    parser.add_argument("--quality", type=str.lower, choices=("nq", "hq"), default="hq", help="Chart quality; defaults to HQ.")
     parser.add_argument("--out", "-o", default="item-report.png", help="Output PNG path.")
     parser.add_argument("--base-url", help="Existing xiv-market URL. If omitted, a local Vite server is started.")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Local server port. Defaults to {DEFAULT_PORT}.")
     parser.add_argument("--keep-server", action="store_true", help="Keep the local Vite server alive.")
     parser.add_argument("--browser", help="Browser executable path. Defaults to PLAYWRIGHT_BROWSER, then bundled Chromium.")
-    parser.add_argument("--items", default=str(ROOT / "app/public/items.json"), help="Path to xiv-market app/public/items.json.")
     parser.add_argument("--debug", action="store_true", help="Print renderer progress to stderr.")
     return parser.parse_args()
 
@@ -36,110 +34,6 @@ def parse_args() -> argparse.Namespace:
 def debug(enabled: bool, message: str) -> None:
     if enabled:
         print(f"[render:item] {message}", file=sys.stderr, flush=True)
-
-
-def load_items(path: Path) -> dict[str, dict[str, object]]:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def resolve_item_id(raw: str, items_path: Path) -> str:
-    item = raw.strip()
-    if item.isdigit():
-        return item
-
-    items = load_items(items_path)
-    normalized = normalize_item_name(item)
-    exact = [(item_id, info) for item_id, info in items.items() if normalize_item_name(str(info.get("name", ""))) == normalized]
-    if exact:
-        return exact[0][0]
-
-    partial = [(item_id, info) for item_id, info in items.items() if normalized in normalize_item_name(str(info.get("name", "")))]
-    if len(partial) == 1:
-        return partial[0][0]
-    if len(partial) > 1:
-        choices = ", ".join(f"{info.get('name')} (#{item_id})" for item_id, info in partial[:12])
-        raise SystemExit(f'Ambiguous item name "{raw}". Matches: {choices}')
-
-    suggestions = suggest_items(item, items, 5)
-    if suggestions:
-        choices = ", ".join(f"{info.get('name')} (#{item_id})" for item_id, info in suggestions)
-        raise SystemExit(f'Item not found: "{raw}". Possible matches: {choices}')
-
-    raise SystemExit(f'Item not found: "{raw}"')
-
-
-def normalize_item_name(value: str) -> str:
-    ignored = set(" \t\n\r·-_　「」《》（）():：")
-    return "".join(ch.lower() for ch in value.strip() if ch not in ignored)
-
-
-def suggest_items(
-    raw: str,
-    items: dict[str, dict[str, object]],
-    limit: int,
-) -> list[tuple[str, dict[str, object]]]:
-    normalized_query = normalize_item_name(raw)
-    if not normalized_query:
-        return []
-
-    scored: list[tuple[float, str, dict[str, object]]] = []
-    for item_id, info in items.items():
-        name = str(info.get("name", ""))
-        score = item_similarity(normalized_query, normalize_item_name(name))
-        if score >= 0.35:
-            scored.append((score, item_id, info))
-    scored.sort(key=lambda item: (item[0], -len(str(item[2].get("name", "")))), reverse=True)
-    return [(item_id, info) for _, item_id, info in scored[:limit]]
-
-
-def item_similarity(query: str, name: str) -> float:
-    if not query or not name:
-        return 0.0
-    if query == name:
-        return 1.0
-    if query in name:
-        return min(0.98, 0.72 + 0.25 * len(query) / max(len(name), 1))
-
-    sequence = SequenceMatcher(None, query, name).ratio()
-    lcs = lcs_ratio(query, name)
-    query_bigrams = char_ngrams(query, 2)
-    name_bigrams = char_ngrams(name, 2)
-    overlap = len(query_bigrams & name_bigrams) / len(query_bigrams | name_bigrams) if query_bigrams and name_bigrams else 0.0
-    score = sequence * 0.50 + lcs * 0.30 + overlap * 0.20
-
-    query_tail = query[-1]
-    if name.endswith(query_tail):
-        score += 0.14
-    elif query_tail in name:
-        score += 0.06
-    else:
-        score -= 0.18
-
-    missing_chars = sum(1 for ch in set(query) if ch not in name)
-    score -= min(0.18, missing_chars * 0.04)
-    return max(0.0, min(1.0, score))
-
-
-def char_ngrams(value: str, size: int) -> set[str]:
-    if len(value) < size:
-        return {value} if value else set()
-    return {value[index : index + size] for index in range(len(value) - size + 1)}
-
-
-def lcs_ratio(left: str, right: str) -> float:
-    if not left or not right:
-        return 0.0
-    previous = [0] * (len(right) + 1)
-    for left_ch in left:
-        current = [0]
-        for index, right_ch in enumerate(right, start=1):
-            if left_ch == right_ch:
-                current.append(previous[index - 1] + 1)
-            else:
-                current.append(max(current[-1], previous[index]))
-        previous = current
-    return previous[-1] / max(len(left), len(right))
 
 
 def wait_for_server(url: str, process: subprocess.Popen[bytes], timeout_sec: int = 30) -> None:
@@ -187,13 +81,6 @@ def stop_server(process: subprocess.Popen[bytes], debug_enabled: bool) -> None:
             process.kill()
 
 
-def build_render_url(base_url: str, item_id: str, scope: str) -> str:
-    from urllib.parse import quote
-
-    normalized_base = base_url if base_url.endswith("/") else f"{base_url}/"
-    return f"{normalized_base}#/render/item/{quote(item_id)}?scope={quote(scope)}"
-
-
 def default_browser_path() -> str | None:
     explicit = os.environ.get("PLAYWRIGHT_BROWSER")
     if explicit:
@@ -220,7 +107,12 @@ def launch_browser(playwright, browser_path: str | None, debug_enabled: bool):
 
 
 def render_report(args: argparse.Namespace) -> dict[str, str]:
-    item_id = resolve_item_id(args.item, Path(args.items))
+    with Path(args.data).open("r", encoding="utf-8") as stream:
+        report = json.load(stream)
+    if report.get("schemaVersion") != 1 or not report.get("itemId") or not report.get("scope"):
+        raise SystemExit("Expected a version 1 ItemReport JSON with itemId and scope")
+    item_id = str(report["itemId"])
+    quality = args.quality if report.get("item", {}).get("canBeHq") else "nq"
     server: subprocess.Popen[bytes] | None = None
 
     try:
@@ -231,7 +123,7 @@ def render_report(args: argparse.Namespace) -> dict[str, str]:
             base_url = f"http://127.0.0.1:{args.port}/"
             wait_for_server(base_url, server)
 
-        url = build_render_url(base_url, item_id, args.scope)
+        url = base_url.rstrip("/") + "/render.html?quality=" + quality
         out_path = Path(args.out).resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         browser_path = args.browser or default_browser_path()
@@ -246,6 +138,8 @@ def render_report(args: argparse.Namespace) -> dict[str, str]:
                 )
                 page.on("console", lambda msg: debug(args.debug, f"console.{msg.type}: {msg.text}"))
                 page.on("pageerror", lambda err: debug(args.debug, f"pageerror: {err}"))
+                payload = json.dumps(report, ensure_ascii=True).replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+                page.add_init_script("Object.defineProperty(globalThis, '__XIV_MARKET_REPORT__', { value: " + payload + " });")
                 debug(args.debug, f"opening {url}")
                 page.goto(url, wait_until="domcontentloaded", timeout=60_000)
                 root = page.locator('[data-render-root="item-report"]')
@@ -267,7 +161,7 @@ def render_report(args: argparse.Namespace) -> dict[str, str]:
                 debug(args.debug, "closing browser")
                 browser.close()
 
-        return {"itemId": item_id, "scope": args.scope, "url": url, "out": str(out_path)}
+        return {"itemId": item_id, "scope": report["scope"], "quality": quality, "url": url, "out": str(out_path)}
     finally:
         if server is not None and not args.keep_server:
             stop_server(server, args.debug)

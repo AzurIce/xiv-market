@@ -7,7 +7,7 @@ import {
   getAllItems,
   itemsStatus,
   loadItems,
-  selectedRegion,
+  selectedRegion, worldDirectory, getItemIconUrl,
   type AggregatedItemData,
 } from '@xiv-market/shared'
 import { Button } from '../button'
@@ -314,7 +314,7 @@ function ListingPrice(props: { price?: number; worldId?: number }) {
         fallback={<span class="text-muted-foreground">-</span>}
       >
         <span class="font-medium tabular-nums">{formatGil(props.price)}</span>
-        <WorldBadge worldId={props.worldId} class="mt-0.5 text-xs text-muted-foreground" />
+        <WorldBadge directory={worldDirectory()} worldId={props.worldId} class="mt-0.5 text-xs text-muted-foreground" />
       </Show>
     </div>
   )
@@ -438,7 +438,7 @@ function MateriaMobileCard(props: { row: MateriaRow; onOpen: (e?: MouseEvent) =>
     >
       <CardContent class="space-y-3">
         <div class="flex items-center gap-3">
-          <ItemIcon itemId={props.row.id} class="h-8 w-8 shrink-0 rounded" />
+          <ItemIcon urls={getItemIconUrl(props.row.id)} class="h-8 w-8 shrink-0 rounded" />
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-medium">{props.row.name}</div>
             <div class="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -841,7 +841,7 @@ export default function MateriaPage() {
                         <TableRow class="cursor-pointer" onClick={(e) => openItem(row.id, e)} onAuxClick={(e) => openItem(row.id, e)}>
                           <TableCell>
                             <div class="flex items-center gap-2">
-                              <ItemIcon itemId={row.id} class="size-7 shrink-0 rounded" />
+                              <ItemIcon urls={getItemIconUrl(row.id)} class="size-7 shrink-0 rounded" />
                               <div class="min-w-0">
                                 <div class="max-w-xs truncate font-medium">{row.name}</div>
                                 <div class="text-xs text-muted-foreground">#{row.id}</div>

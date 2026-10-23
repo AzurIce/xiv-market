@@ -36,6 +36,9 @@ packages/
 ├── shared/              # @xiv-market/shared — 类型、API、工具
 │   ├── src/types.ts     # TypeScript 接口
 │   ├── src/api.ts       # Universalis API 客户端
+│   ├── src/market-normalize.ts # 纯行情归一化，网页与外部报表共用
+│   ├── src/item-report.ts # 外部 JSON 契约、归一化和 NQ/HQ 统计
+│   ├── src/world-directory.ts # 每份报表独立的服务器索引与范围过滤
 │   ├── src/items.ts     # 物品数据加载/查询
 │   ├── src/region.ts    # 区域/服务器全局状态
 │   ├── src/utils.ts     # cn() = clsx + tailwind-merge
@@ -46,11 +49,14 @@ packages/
     ├── src/*.tsx        # 扁平组件目录（Kobalte 包装、纯 CSS 组件、模式组件）
     │                    # 如 button、select、empty-state、refresh-button、world-badge、scope-select
     ├── src/layout/      # 布局组件（Navbar）
+    ├── src/item-report/ # 网页与截图唯一的报表 View、图表及截图适配
     ├── src/pages/       # 共享页面（Home、Materia、ItemDetail、Settings）
     └── src/index.ts     # 统一导出
 
 app/                     # xiv-market 应用（GitHub Pages 部署）
 ├── src/App.tsx          # 路由外壳
+├── src/render.tsx       # 注入报表 JSON 的轻量截图入口，无数据请求
+├── render.html          # 与 index.html 一起构建的截图页面
 ├── vite.config.ts       # Vite 配置（base 通过环境变量控制）
 └── public/              # 静态资源（items.json）
 
@@ -91,6 +97,10 @@ app/
   - 布局组件（Navbar）
 
 - `app/` — **应用入口**，仅包含路由配置和构建配置，不存放业务逻辑
+
+物品报表统一由 `ItemReportView` 展示。网页 controller 取数，截图入口接收 `window.__XIV_MARKET_REPORT__` JSON；不要重新添加截图专用统计卡或图表。View 及子组件使用 props 传入物品、行情和 `WorldDirectory`，不得通过修改模块全局 store 为截图供数。`showDetails` 只控制明细显示，不改变统计和品质筛选。
+
+通过 `quality` / `onQualityChange` 传入显式品质。截图默认 HQ，不可 HQ 的物品固定 NQ；显式品质不能因缺货而回退到另一品质。挂单、历史和图表必须按同一品质过滤，不能依据是否同时存在 NQ/HQ 挂单决定是否过滤。网页 URL 同时保留 scope 和 quality。
 
 ### 复用方式
 

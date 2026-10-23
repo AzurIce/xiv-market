@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from '@solidjs/router'
 import {
   fetchMarketableItems, fetchAggregatedData,
   createQueryResource, matchedData,
-  selectedRegion,
+  selectedRegion, worldDirectory, getItemIconUrl,
   getItemName, canItemBeHq,
   type AggregatedItemData,
 } from '@xiv-market/shared'
@@ -131,7 +131,7 @@ function MobileItemCard(props: {
       <CardContent class="px-2 py-0 space-y-1">
         {/* 第一行：图标 + 名称 + ID */}
         <div class="flex items-center gap-2.5">
-          <ItemIcon itemId={props.itemId} class="h-7 w-7 rounded shrink-0" />
+          <ItemIcon urls={getItemIconUrl(props.itemId)} class="h-7 w-7 rounded shrink-0" />
           <div class="min-w-0 flex-1">
             <div class="font-medium text-sm truncate leading-tight">{getItemName(props.itemId)}</div>
             <div class="text-[10px] text-muted-foreground">#{props.itemId}</div>
@@ -146,7 +146,7 @@ function MobileItemCard(props: {
                 <Show when={hqAble()}><NqTag /></Show><span class="font-medium">{formatGil(minNqPrice()!)}</span>
               </div>
               <Show when={minNqWorldId()}>
-                <div class="mt-0.5"><WorldBadge worldId={minNqWorldId()} class="text-[10px] text-muted-foreground" /></div>
+                <div class="mt-0.5"><WorldBadge directory={worldDirectory()} worldId={minNqWorldId()} class="text-[10px] text-muted-foreground" /></div>
               </Show>
             </Show>
               <Show when={minHqPrice() != null && minHqPrice()! > 0}>
@@ -154,7 +154,7 @@ function MobileItemCard(props: {
                 <HqTag /><span class="font-medium">{formatGil(minHqPrice()!)}</span>
               </div>
               <Show when={minHqWorldId()}>
-                <div class="mt-0.5"><WorldBadge worldId={minHqWorldId()} class="text-[10px] text-muted-foreground" /></div>
+                <div class="mt-0.5"><WorldBadge directory={worldDirectory()} worldId={minHqWorldId()} class="text-[10px] text-muted-foreground" /></div>
               </Show>
             </Show>
           </div>
@@ -422,7 +422,7 @@ export default function Home() {
                         >
                           <TableCell>
                             <div class="flex items-center gap-2">
-                              <ItemIcon itemId={itemId} class="h-6 w-6 rounded" />
+                              <ItemIcon urls={getItemIconUrl(itemId)} class="h-6 w-6 rounded" />
                               <div class="flex flex-col min-w-0">
                                 <span class="font-medium text-sm truncate max-w-xs">{getItemName(itemId)}</span>
                                 <span class="text-xs text-muted-foreground">#{itemId}</span>
@@ -436,14 +436,14 @@ export default function Home() {
                                   <span class="flex items-center gap-1">
                                     <Show when={hqAble()}><NqTag /></Show>
                                     <span class="font-medium">{formatGil(minListingInfo()!.nqPrice!)} Gil</span>
-                                    <Show when={minListingInfo()!.nqWorldId}><WorldBadge worldId={minListingInfo()!.nqWorldId} class="text-xs text-muted-foreground" /></Show>
+                                    <Show when={minListingInfo()!.nqWorldId}><WorldBadge directory={worldDirectory()} worldId={minListingInfo()!.nqWorldId} class="text-xs text-muted-foreground" /></Show>
                                   </span>
                                 </Show>
                                 <Show when={minListingInfo()!.hqPrice != null && minListingInfo()!.hqPrice! > 0}>
                                   <span class="flex items-center gap-1">
                                     <HqTag />
                                     <span class="font-medium">{formatGil(minListingInfo()!.hqPrice!)} Gil</span>
-                                    <Show when={minListingInfo()!.hqWorldId}><WorldBadge worldId={minListingInfo()!.hqWorldId} class="text-xs text-muted-foreground" /></Show>
+                                    <Show when={minListingInfo()!.hqWorldId}><WorldBadge directory={worldDirectory()} worldId={minListingInfo()!.hqWorldId} class="text-xs text-muted-foreground" /></Show>
                                   </span>
                                 </Show>
                                 <Show when={!(minListingInfo()!.nqPrice) && !(minListingInfo()!.hqPrice)}>

@@ -1,15 +1,15 @@
 import { createEffect, createSignal, on, Show } from 'solid-js'
 
-import { cn, getItemIconUrl } from '@xiv-market/shared'
+import { cn } from '@xiv-market/shared'
 
 /**
  * 物品图标：按顺序尝试多个图源（xivapi → garlandtools），
  * 全部失败或物品无图标时渲染同尺寸占位块，不再裂图。
  */
-export function ItemIcon(props: { itemId: number; class?: string }) {
-  const urls = () => getItemIconUrl(props.itemId)
+export function ItemIcon(props: { urls: string[]; class?: string }) {
+  const urls = () => props.urls
   const [idx, setIdx] = createSignal(0)
-  createEffect(on(() => props.itemId, () => setIdx(0)))
+  createEffect(on(() => props.urls.join('\n'), () => setIdx(0)))
 
   return (
     <Show

@@ -2,10 +2,8 @@ import { createMemo, Show, splitProps } from 'solid-js'
 
 import {
   cn,
-  getDcNameByWorldName,
   getDcShortName,
-  getWorldDcName,
-  getWorldName,
+  type WorldDirectory,
 } from '@xiv-market/shared'
 
 // 中国四大区各一个区分色，其他大区用中性色。
@@ -35,18 +33,19 @@ export function DcBadge(props: { dcName: string; class?: string }) {
 }
 
 export function WorldBadge(props: {
+  directory: WorldDirectory
   worldName?: string
   worldId?: number
   class?: string
 }) {
-  const [, rest] = splitProps(props, ['class'])
+  const [, rest] = splitProps(props, ['class', 'directory', 'worldName', 'worldId'])
 
   const name = createMemo(() =>
-    props.worldName || (props.worldId != null ? getWorldName(props.worldId) : null)
+    props.worldName || (props.worldId != null ? props.directory.worldName(props.worldId) : null)
   )
   const dcName = createMemo(() => {
-    if (props.worldName) return getDcNameByWorldName(props.worldName)
-    if (props.worldId != null) return getWorldDcName(props.worldId)
+    if (props.worldName) return props.directory.dcNameByWorldName(props.worldName)
+    if (props.worldId != null) return props.directory.dcNameById(props.worldId)
     return null
   })
   const fallbackText = () => name() ?? (props.worldId != null ? `服务器 #${props.worldId}` : '-')

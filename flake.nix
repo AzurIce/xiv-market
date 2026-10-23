@@ -22,14 +22,12 @@
           bunDeps = pkgs.stdenv.mkDerivation {
             pname = "xiv-market-bun-deps";
             version = "0.0.0";
-            src = builtins.path {
-              path = ./.;
-              filter =
-                path: _type:
-                let
-                  name = builtins.baseNameOf path;
-                in
-                name != "flake.nix" && name != "flake.lock" && name != ".git";
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions [
+                ./package.json ./bun.lock ./app/package.json
+                ./packages/shared/package.json ./packages/ui/package.json
+              ];
             };
             nativeBuildInputs = [
               pkgs.bun
@@ -41,22 +39,31 @@
               export HOME=$TMPDIR
               export BUN_INSTALL_CACHE_DIR=$TMPDIR/bun-cache
               export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
-              bun install --frozen-lockfile
+              bun install --frozen-lockfile --ignore-scripts \
+                --os=${if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "linux"} \
+                --cpu=${if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "x64"}
               runHook postBuild
             '';
             installPhase = ''
               runHook preInstall
               mkdir -p $out
-              cp -a . $out/
-              rm -rf $out/.git $out/app/dist
+              cp -a node_modules $out/
+              for workspace in app packages/shared packages/ui; do
+                if [ -d $workspace/node_modules ]; then
+                  mkdir -p $out/$workspace
+                  cp -a $workspace/node_modules $out/$workspace/
+                fi
+              done
               runHook postInstall
             '';
+            # Keep downloaded package contents identical across builders.
+            dontFixup = true;
             outputHashMode = "recursive";
             outputHashAlgo = "sha256";
             outputHash =
               {
-                x86_64-linux = "sha256-bAoKsGJv6eNSOcsVDYvmk0p7X7lxYD4JBUGLBShfQI0=";
-                aarch64-darwin = "sha256-pAc/mYJHtvQfjxccLnZ9ZBfTIsTix/NjZxSXlrWu86s=";
+                x86_64-linux = "sha256-3/DE0LkrC6melJmlKW4pesdnC6SaEGRWi81gSPluSnc=";
+                aarch64-darwin = "sha256-0+02EGB6uaDnfmnGOamCLafjcKck2dgguutwrU+d7Mk=";
               }
               .${pkgs.stdenv.hostPlatform.system}
                 or (throw "xiv-market bun dependencies hash is not pinned for ${pkgs.stdenv.hostPlatform.system}");
@@ -72,7 +79,15 @@
           ];
           buildPhase = ''
             runHook preBuild
-            cp -a ${bunDeps}/. .
+            # The fixed-output cache contains dependencies only; source always
+            # comes from this revision.
+            cp -a ${bunDeps}/node_modules .
+            for workspace in app packages/shared packages/ui; do
+              if [ -d ${bunDeps}/$workspace/node_modules ]; then
+                mkdir -p $workspace
+                cp -a ${bunDeps}/$workspace/node_modules $workspace/
+              fi
+            done
             chmod -R u+w .
             patchShebangs node_modules
             bun run build

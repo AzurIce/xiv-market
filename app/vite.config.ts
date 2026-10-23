@@ -30,6 +30,14 @@ const gitCommit = getGitCommit()
 export default defineConfig({
   base: process.env.BASE_URL || '/',
   plugins: [solid(), tailwindcss()],
+  build: {
+    rolldownOptions: {
+      input: {
+        app: fileURLToPath(new URL('./index.html', import.meta.url)),
+        render: fileURLToPath(new URL('./render.html', import.meta.url)),
+      },
+    },
+  },
   define: {
     __BUILD_COMMIT__: JSON.stringify(version.commit),
     __BUILD_DATE__: JSON.stringify(version.date),

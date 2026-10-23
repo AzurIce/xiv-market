@@ -37,6 +37,14 @@
     "./error-boundary": {
       "types": "./src/error-boundary.tsx",
       "default": "./src/error-boundary.tsx"
+    },
+    "./item-report": {
+      "types": "./src/item-report/view.tsx",
+      "default": "./src/item-report/view.tsx"
+    },
+    "./item-report/snapshot": {
+      "types": "./src/item-report/snapshot.tsx",
+      "default": "./src/item-report/snapshot.tsx"
     }
   },
   "dependencies": {

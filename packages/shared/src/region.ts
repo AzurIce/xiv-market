@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal } from 'solid-js'
 import { createStore } from 'solid-js/store'
 import type { DataCenter, World } from './types'
+import { createWorldDirectory } from './world-directory'
 
 const REGION_STORAGE_KEY = 'xiv_region'
 
@@ -22,6 +23,8 @@ createEffect(() => {
 
 export const [dataCenters, setDataCenters] = createStore<DataCenter[]>([])
 export const [worlds, setWorlds] = createStore<World[]>([])
+
+export const worldDirectory = createMemo(() => createWorldDirectory(dataCenters, worlds))
 
 // 大区/服务器映射是否就绪。未就绪时 scope 判定（region/dc/world）不可靠，
 // 依赖 scope 过滤的页面应按"数据未就绪"（骨架）处理，而非过滤为空
@@ -70,30 +73,12 @@ export function availableRegions(): string[] {
   return Array.from(regions)
 }
 
-const worldNameById = createMemo((): Map<number, string> => {
-  const map = new Map<number, string>()
-  for (const w of worlds) {
-    map.set(w.id, w.name)
-  }
-  return map
-})
-
-const worldDcById = createMemo((): Map<number, string> => {
-  const map = new Map<number, string>()
-  for (const dc of dataCenters) {
-    for (const worldId of dc.worlds) {
-      map.set(worldId, dc.name)
-    }
-  }
-  return map
-})
-
 export function getWorldName(worldId: number): string | null {
-  return worldNameById().get(worldId) ?? null
+  return worldDirectory().worldName(worldId)
 }
 
 export function getWorldDcName(worldId: number): string | null {
-  return worldDcById().get(worldId) ?? null
+  return worldDirectory().dcNameById(worldId)
 }
 
 export function getWorldDisplayName(worldId: number): string {
@@ -104,29 +89,15 @@ export function getWorldDisplayName(worldId: number): string {
   return world
 }
 
-const worldDcByName = createMemo((): Map<string, string> => {
-  const worldMap = worldNameById()
-  const map = new Map<string, string>()
-  for (const dc of dataCenters) {
-    for (const worldId of dc.worlds) {
-      const worldName = worldMap.get(worldId)
-      if (worldName) {
-        map.set(worldName, dc.name)
-      }
-    }
-  }
-  return map
-})
-
 export function getWorldDisplayNameByName(worldName: string): string {
   if (!worldName) return ''
-  const dc = worldDcByName().get(worldName)
+  const dc = worldDirectory().dcNameByWorldName(worldName)
   if (dc) return `${dc}·${worldName}`
   return worldName
 }
 
 export function getDcNameByWorldName(worldName: string): string | null {
-  return worldDcByName().get(worldName) ?? null
+  return worldDirectory().dcNameByWorldName(worldName) ?? null
 }
 
 export type DataScope = 'region' | 'dc' | 'world'
@@ -155,9 +126,8 @@ export function getAvailableScopes(): ScopeOption[] {
   }
 
   // World level
-  const worldToDc = worldDcById()
   for (const world of worlds) {
-    const dcName = worldToDc.get(world.id)
+    const dcName = worldDirectory().dcNameById(world.id)
     options.push({ type: 'world', value: world.name, label: dcName ? `${dcName}·${world.name}` : world.name })
   }
 
