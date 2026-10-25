@@ -36,7 +36,10 @@ XIV Market 使用 [Universalis](https://universalis.app) 公开 API 直接查询
 
 物品中文名和图标 ID 来自 [thewakingsands/ffxiv-datamining-cn](https://github.com/thewakingsands/ffxiv-datamining-cn) 的 `Item.csv`。
 
-构建时通过 `bun run update-items` 自动下载并生成可读的 `items.json`。
+`bun run update-items` 下载 CSV，生成 `data/items.json` 和 `data/items-version.json`。
+物品 JSON 通过 [Shadow](https://github.com/AzurIce/shadow) 发布到 TOS，Git 只记录内容哈希 ref 和版本信息。
+开发和生产构建均从 `.shadow/refs/data/items.json.ref` 生成公开 URL，网页直接从 TOS 加载名称与图标数据。
+JSON 不进入 GitHub Pages 构建产物；加载失败时首页显示提示并支持重试，仍可按 ID 搜索。
 
 ## 开发
 
@@ -47,12 +50,17 @@ bun install
 # 启动开发服务器
 bun run dev
 
-# 更新物品数据（当游戏版本更新时）
+# 更新并发布物品数据（需要 Shadow 和 TOS 凭证）
 bun run update-items
+shadow publish
 
 # 构建生产版本
 bun run build
 ```
+
+普通开发和构建只需已提交的 ref，不需要 TOS 密钥，也不需要先恢复 JSON。
+需要本地物品数据文件时执行 `shadow restore`。本地更新过 JSON 后，必须先 `shadow publish` 再构建，避免引用旧版本。
+Nix 包仍提供 `$out/items.json`，使用 ref 中的 SHA-256 从 TOS 固定获取对应数据。
 
 ## 网页与图片共用的物品报表
 
@@ -95,7 +103,23 @@ bun run check-report
 
 推送到 `main` 分支后，GitHub Actions 会自动构建并部署到 GitHub Pages。
 
-构建前会自动检查 `items.json` 是否为最新版本，如果过旧会阻止部署，提示先运行 `bun run update-items` 更新数据。
+构建前会自动检查物品数据是否为最新版本，如果过旧会阻止部署，提示先运行 `bun run update-items` 和 `shadow publish` 更新、发布数据。
+
+Shadow 的 bucket、区域和项目命名空间配置在 `shadow.toml`。本地凭证放在被忽略的 `.env`：
+
+```dotenv
+TOS_ACCESS_KEY=your-access-key
+TOS_SECRET_KEY=your-secret-key
+# TOS_SECURITY_TOKEN=your-temporary-security-token
+```
+
+GitHub Actions 使用同名 repository secrets；凭证只用于 Shadow，不注入前端。
+每次部署先 `shadow restore`、`shadow publish` 和远端校验，再检查 JSON 的公开读取、CORS、类型及内容哈希，成功后才构建。
+TOS 需允许 `https://azurice.github.io` 的跨域 GET/HEAD；本地开发另需允许 `http://localhost:*` 和 `http://127.0.0.1:*`。
+可运行 `bun run scripts/check-items-access.ts` 单独验证生产地址。
+
+定时更新流程每 15 分钟检查上游，有变化时生成 JSON、发布到 TOS，再提交 `.shadow/refs/data/items.json.ref` 和 `data/items-version.json` 并触发部署。
+手动更新后也应提交这两个文件。
 
 ## License
 

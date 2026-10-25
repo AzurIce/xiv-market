@@ -4,10 +4,11 @@ import {
   fetchMarketableItems, fetchAggregatedData,
   createQueryResource, matchedData,
   selectedRegion, worldDirectory, getItemIconUrl,
-  getItemName, canItemBeHq,
+  getItemName, canItemBeHq, itemsStatus, loadItems,
   type AggregatedItemData,
 } from '@xiv-market/shared'
 import { Card, CardContent } from '../card'
+import { Button } from '../button'
 import { QualityBadge } from '../quality-badge'
 import { Input } from '../input'
 import { Skeleton } from '../skeleton'
@@ -208,6 +209,7 @@ export default function Home() {
 
   const marketable = createQueryResource(() => true, (_, signal) => fetchMarketableItems(signal))
   const marketableItems = () => marketable.res()?.data
+  const requiresItemNames = () => /[^0-9]/.test(debouncedQuery().trim())
 
   const pagedItems = createMemo(() => {
     const all = marketableItems() ?? []
@@ -233,6 +235,7 @@ export default function Home() {
   const agg = createQueryResource(
     () => {
       if (!marketableItems()) return null
+      if (requiresItemNames() && itemsStatus() !== 'ready') return null
       return { region: selectedRegion(), items: currentItems() }
     },
     async ({ region, items }, signal) => {
@@ -254,9 +257,15 @@ export default function Home() {
 
   const getItemAgg = (itemId: number) => aggMap()?.get(itemId)
 
-  const tableError = () => marketable.error() ?? agg.error()
+  const namesError = () => requiresItemNames() && itemsStatus() === 'error'
+  const tableError = () => namesError()
+    ? '物品名称与图标数据暂时无法获取，请检查网络后重试'
+    : marketable.error() ?? agg.error()
+  const tableReady = () => (!requiresItemNames() || itemsStatus() === 'ready') && aggMap() !== undefined
+  const refreshing = () => agg.loading() || marketable.loading() || (requiresItemNames() && itemsStatus() === 'loading')
 
   const handleRefresh = () => {
+    if (itemsStatus() === 'error') void loadItems()
     // 前置（可交易物品列表）未就绪时重试前置；否则只刷新聚合数据（参数不变，内容保留）
     if (marketableItems() === undefined) marketable.refetch()
     else agg.refetch()
@@ -309,7 +318,7 @@ export default function Home() {
       <PageHeader
         title="市场总览"
         description="浏览 FFXIV 可交易物品的市场行情"
-        actions={<RefreshButton loading={agg.loading() || marketable.loading()} onClick={handleRefresh} />}
+        actions={<RefreshButton loading={refreshing()} onClick={handleRefresh} />}
       />
 
       <div class="flex flex-col gap-4 mb-6">
@@ -345,27 +354,37 @@ export default function Home() {
               </button>
             </Show>
           </div>
-          <Show when={marketableItems()}>
+          <Show when={marketableItems() && (!requiresItemNames() || itemsStatus() === 'ready')}>
             <div class="text-sm text-muted-foreground flex items-center shrink-0">
               共 <span class="font-medium text-foreground mx-1">{pagedItems().length.toLocaleString()}</span> 个物品
             </div>
           </Show>
         </div>
+        <Show when={itemsStatus() !== 'ready'}>
+          <div class="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm text-muted-foreground" role="status">
+            <span>{itemsStatus() === 'error'
+              ? '物品名称加载失败，暂时无法按名称搜索；仍可使用 ID 搜索。'
+              : '正在加载物品名称，暂可使用 ID 搜索。'}</span>
+            <Show when={itemsStatus() === 'error'}>
+              <Button variant="outline" size="sm" onClick={() => void loadItems()}>重试</Button>
+            </Show>
+          </div>
+        </Show>
       </div>
 
       <div class="pb-2">
         <Show
-          when={aggMap() !== undefined}
+          when={tableReady()}
           fallback={
             <Show
               when={!tableError()}
               fallback={
                 <EmptyState
                   variant="error"
-                  title={marketable.error() ? '物品列表加载失败' : '市场数据加载失败'}
+                  title={namesError() ? '物品名称加载失败' : marketable.error() ? '物品列表加载失败' : '市场数据加载失败'}
                   description={tableError() ?? undefined}
                   action={
-                    <RefreshButton loading={marketable.loading() || agg.loading()} onClick={handleRefresh} />
+                    <RefreshButton loading={refreshing()} onClick={handleRefresh} />
                   }
                 />
               }

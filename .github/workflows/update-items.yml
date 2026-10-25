@@ -24,7 +24,7 @@ jobs:
       - name: Check for upstream Item.csv updates
         id: check
         run: |
-          LOCAL_COMMIT=$(python3 -c "import json; print(json.load(open('app/public/version.json'))['commit'])")
+          LOCAL_COMMIT=$(python3 -c "import json; print(json.load(open('data/items-version.json'))['commit'])")
           echo "Local items.json commit: $LOCAL_COMMIT"
 
           REMOTE_JSON=$(curl -sf \
@@ -60,12 +60,24 @@ jobs:
         if: steps.check.outputs.outdated == 'true'
         run: bun run update-items
 
+      - name: Setup Shadow
+        if: steps.check.outputs.outdated == 'true'
+        uses: ./.github/actions/setup-shadow
+
+      - name: Publish items to TOS
+        if: steps.check.outputs.outdated == 'true'
+        env:
+          TOS_ACCESS_KEY: ${{ secrets.TOS_ACCESS_KEY }}
+          TOS_SECRET_KEY: ${{ secrets.TOS_SECRET_KEY }}
+          TOS_SECURITY_TOKEN: ${{ secrets.TOS_SECURITY_TOKEN }}
+        run: shadow publish
+
       - name: Commit and push
         if: steps.check.outputs.outdated == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/public/items.json app/public/version.json
+          git add .shadow/refs/data/items.json.ref data/items-version.json
           if git diff --cached --quiet; then
             echo "No changes after update, skipping commit."
             exit 0

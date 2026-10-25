@@ -27,6 +27,7 @@ BASE_URL=/xiv-market/ bun run build
 
 # 更新物品数据（CI/CD 使用）
 bun run update-items
+shadow publish
 ```
 
 ## 项目结构
@@ -58,13 +59,17 @@ app/                     # xiv-market 应用（GitHub Pages 部署）
 ├── src/render.tsx       # 注入报表 JSON 的轻量截图入口，无数据请求
 ├── render.html          # 与 index.html 一起构建的截图页面
 ├── vite.config.ts       # Vite 配置（base 通过环境变量控制）
-└── public/              # 静态资源（items.json）
+└── public/              # 静态图片等资源（物品 JSON 由 TOS 提供）
 
 scripts/                 # 构建脚本
 └── update-items.ts
 
 data/                    # 数据源
-└── Item.csv
+├── items.json           # Shadow 管理的物品数据，Git 忽略
+└── items-version.json   # 上游版本信息，提交到 Git
+
+.shadow/refs/data/items.json.ref # 内容哈希与大小，提交到 Git
+shadow.toml              # TOS bucket、区域、项目命名空间
 ```
 
 ## Monorepo 说明
@@ -120,7 +125,10 @@ app/
 
 - 物品中文名/图标/是否可 HQ（`canBeHq`，仅 true 时输出）映射来自 [thewakingsands/ffxiv-datamining-cn](https://github.com/thewakingsands/ffxiv-datamining-cn) 的 `Item.csv`
 - 图标 URL 格式：`https://www.garlandtools.org/files/icons/item/t/{icon_id}.png`
-- 物品数据随构建产物部署（`public/items.json`），运行时通过 `fetch('/items.json')` 加载
+- `bun run update-items` 生成 `data/items.json` 和 `data/items-version.json`，再用 `shadow publish` 发布到 TOS；提交版本文件和 `.shadow/refs/data/items.json.ref`，不提交 JSON 文件本体
+- `scripts/prepare-items.ts` 在开发和构建前读取 Shadow 配置与 ref，生成被忽略的 `app/.generated/items-source.json`；Vite 将内容寻址的 TOS URL 注入 `__ITEMS_URL__`，网页直接请求此地址，不从 GitHub Pages 获取物品数据
+- 普通构建不需要凭证或恢复数据；若本地存在尚未发布的 JSON 改动，构建会失败，需先 `shadow publish`
+- 部署先通过 Shadow 恢复、发布和校验，再用 `scripts/check-items-access.ts` 验证公开读取、CORS 和哈希；`.env` 只存本地凭证，CI 使用同名 secrets，不得把密钥注入前端
 - commit hash 在构建时注入 JS bundle（`vite.config.ts` → `define`）
 - 物品名/图标查询：`@xiv-market/shared` — `getItemName(id)` / `getItemIconUrl(id)` / `getIconUrl(iconId)`
 - 不可 HQ 判断：`canItemBeHq(id)`；Universalis 存在把不可 HQ 物品（如水晶）上报出 HQ 统计的脏数据，`fetchAggregatedData` 会据此丢弃 hq 块

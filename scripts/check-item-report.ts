@@ -58,10 +58,11 @@ async function open(mode: 'web' | 'snapshot' | 'baseline', report = makeReport()
   await page.route('**/*', async (route: any) => {
     const url = new URL(route.request().url())
     const path = decodeURIComponent(url.pathname)
-    if (url.hostname === 'universalis.app' || path.endsWith('/items.json')) {
+    const isItemsData = /\/objects\/sha256\/[a-f0-9]{2}\/[a-f0-9]{62}$/.test(path)
+    if (url.hostname === 'universalis.app' || isItemsData) {
       dataRequests.push(url.href)
       if (mode === 'snapshot') return route.abort()
-      if (path.endsWith('/items.json')) return route.fulfill({ json: { [report.itemId]: report.item } })
+      if (isItemsData) return route.fulfill({ json: { [report.itemId]: report.item } })
       if (path === '/api/v2/data-centers') return route.fulfill({ json: report.dataCenters })
       if (path === '/api/v2/worlds') return route.fulfill({ json: report.worlds })
       if (path.startsWith('/api/v2/history/')) return faults.history

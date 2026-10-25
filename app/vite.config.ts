@@ -1,20 +1,9 @@
 import { readFileSync } from 'fs'
-import { resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
 import { defineConfig } from 'vite'
 import solid from 'vite-plugin-solid'
 import tailwindcss from '@tailwindcss/vite'
-
-function getVersionInfo() {
-  try {
-    const __dirname = fileURLToPath(new URL('.', import.meta.url))
-    const path = resolve(__dirname, 'public', 'version.json')
-    return JSON.parse(readFileSync(path, 'utf-8'))
-  } catch {
-    return { commit: 'unknown', date: '' }
-  }
-}
 
 function getGitCommit() {
   try {
@@ -24,7 +13,7 @@ function getGitCommit() {
   }
 }
 
-const version = getVersionInfo()
+const itemsSource = JSON.parse(readFileSync(new URL('./.generated/items-source.json', import.meta.url), 'utf-8'))
 const gitCommit = getGitCommit()
 
 export default defineConfig({
@@ -39,8 +28,9 @@ export default defineConfig({
     },
   },
   define: {
-    __BUILD_COMMIT__: JSON.stringify(version.commit),
-    __BUILD_DATE__: JSON.stringify(version.date),
+    __BUILD_COMMIT__: JSON.stringify(itemsSource.commit),
+    __BUILD_DATE__: JSON.stringify(itemsSource.date),
+    __ITEMS_URL__: JSON.stringify(itemsSource.url),
     __GIT_COMMIT__: JSON.stringify(gitCommit),
   },
   server: {

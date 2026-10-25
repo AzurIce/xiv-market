@@ -4,7 +4,6 @@ import { join } from 'path'
 const CSV_URL = 'https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/master/Item.csv'
 const COMMITS_API_URL = 'https://api.github.com/repos/thewakingsands/ffxiv-datamining-cn/commits?path=Item.csv&per_page=1'
 const ROOT = join(import.meta.dir, '..')
-const APPS = ['app']
 
 interface ItemRow {
   id: number
@@ -112,13 +111,11 @@ async function main() {
   try { commit = await fetchCommit(); console.log(`  commit: ${commit.sha} (${commit.date})`) }
   catch (e: any) { console.warn('Commit info fetch failed:', e.message) }
 
-  for (const app of APPS) {
-    const out = join(ROOT, app, 'public')
-    if (!existsSync(out)) mkdirSync(out, { recursive: true })
-    writeFileSync(join(out, 'items.json'), readableJson)
-    writeFileSync(join(out, 'version.json'), JSON.stringify({ commit: commit.sha, date: commit.date }))
-    console.log(`  → ${app}/public/`)
-  }
+  const out = join(ROOT, 'data')
+  if (!existsSync(out)) mkdirSync(out, { recursive: true })
+  writeFileSync(join(out, 'items.json'), readableJson)
+  writeFileSync(join(out, 'items-version.json'), JSON.stringify({ commit: commit.sha, date: commit.date }))
+  console.log('  → data/items.json + data/items-version.json')
 }
 
 main().catch(e => { console.error(e); process.exit(1) })

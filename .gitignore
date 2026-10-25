@@ -1,7 +1,11 @@
 /target
-/data
+/data/*
+!/data/items-version.json
+.env
 *.db*
 node_modules
 .direnv
 tmp_Item.csv
 
+# shadow
+/data/items.json

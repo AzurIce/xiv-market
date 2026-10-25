@@ -19,14 +19,38 @@
       mkPackage =
         pkgs:
         let
+          shadowConfig = builtins.fromTOML (builtins.readFile ./shadow.toml);
+          itemsRef = builtins.fromTOML (builtins.readFile ./.shadow/refs/data/items.json.ref);
+          itemsDigest = pkgs.lib.removePrefix "sha256:" itemsRef.oid;
+          itemsKey = pkgs.lib.concatStringsSep "/" (
+            pkgs.lib.optional (shadowConfig.backend.prefix != "") shadowConfig.backend.prefix
+            ++ [
+              shadowConfig.name
+              "objects"
+              "sha256"
+              (builtins.substring 0 2 itemsDigest)
+              (builtins.substring 2 62 itemsDigest)
+            ]
+          );
+          itemsOrigin =
+            builtins.replaceStrings [ "https://" ] [ "https://${shadowConfig.backend.bucket}." ]
+              shadowConfig.backend.endpoint;
+          itemsData = pkgs.fetchurl {
+            name = "xiv-market-items.json";
+            url = "${itemsOrigin}/${itemsKey}";
+            sha256 = itemsDigest;
+          };
           bunDeps = pkgs.stdenv.mkDerivation {
             pname = "xiv-market-bun-deps";
             version = "0.0.0";
             src = pkgs.lib.fileset.toSource {
               root = ./.;
               fileset = pkgs.lib.fileset.unions [
-                ./package.json ./bun.lock ./app/package.json
-                ./packages/shared/package.json ./packages/ui/package.json
+                ./package.json
+                ./bun.lock
+                ./app/package.json
+                ./packages/shared/package.json
+                ./packages/ui/package.json
               ];
             };
             nativeBuildInputs = [
@@ -97,7 +121,7 @@
             runHook preInstall
             mkdir -p $out
             cp -r app/dist $out/dist
-            cp app/public/items.json $out/items.json
+            cp ${itemsData} $out/items.json
             cp scripts/render_item_report.py $out/render_item_report.py
             runHook postInstall
           '';

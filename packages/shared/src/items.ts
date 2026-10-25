@@ -1,6 +1,5 @@
 import { createSignal } from 'solid-js'
 import { fetchJsonWithTimeout } from './async'
-import { baseUrl } from './utils'
 
 export interface ItemInfo {
   name: string
@@ -16,6 +15,7 @@ export interface ItemsVersionInfo {
 
 declare const __BUILD_COMMIT__: string
 declare const __BUILD_DATE__: string
+declare const __ITEMS_URL__: string
 
 type LegacyItemsPayload = Record<string, { name: string; icon: number; canBeHq?: boolean }>
 
@@ -35,8 +35,7 @@ function trackItems() {
 }
 
 async function fetchItems() {
-  const url = `${baseUrl()}items.json?v=${__BUILD_COMMIT__}`
-  return fetchJsonWithTimeout<LegacyItemsPayload>(url, '物品数据请求失败')
+  return fetchJsonWithTimeout<LegacyItemsPayload>(__ITEMS_URL__, '物品数据请求失败')
 }
 
 function normalizeItems(payload: LegacyItemsPayload): Map<number, ItemInfo> {
@@ -48,6 +47,7 @@ function normalizeItems(payload: LegacyItemsPayload): Map<number, ItemInfo> {
       map.set(itemId, { name: info.name, icon: Number(info.icon ?? 0), canBeHq: info.canBeHq === true })
     }
   }
+  if (!map.size) throw new Error('物品数据为空或格式不正确')
   return map
 }
 

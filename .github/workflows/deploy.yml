@@ -23,7 +23,7 @@ jobs:
 
       - name: Check items.json freshness
         run: |
-          LOCAL_COMMIT=$(cat app/public/version.json | python3 -c "import sys,json; print(json.load(sys.stdin)['commit'])")
+          LOCAL_COMMIT=$(cat data/items-version.json | python3 -c "import sys,json; print(json.load(sys.stdin)['commit'])")
           echo "Local items.json commit: $LOCAL_COMMIT"
 
           REMOTE_COMMIT=$(curl -s \
@@ -38,8 +38,9 @@ jobs:
             echo "  Local:  $LOCAL_COMMIT"
             echo "  Remote: $REMOTE_COMMIT"
             echo ""
-            echo "Please run the following command locally and commit the updated items.json:"
+            echo "Please update and publish the item data, then commit its version and Shadow ref:"
             echo "  bun run update-items"
+            echo "  shadow publish"
             echo ""
             exit 1
           fi
@@ -60,6 +61,25 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+
+      - name: Setup Shadow
+        uses: ./.github/actions/setup-shadow
+
+      - name: Restore and publish items to TOS
+        env:
+          TOS_ACCESS_KEY: ${{ secrets.TOS_ACCESS_KEY }}
+          TOS_SECRET_KEY: ${{ secrets.TOS_SECRET_KEY }}
+          TOS_SECURITY_TOKEN: ${{ secrets.TOS_SECURITY_TOKEN }}
+        run: |
+          shadow restore
+          shadow publish
+          shadow check --remote
+
+      - name: Check public item data access
+        run: bun run scripts/check-items-access.ts
+
+      - name: Test
+        run: bun run test
 
       - name: Build
         run: bun run build
