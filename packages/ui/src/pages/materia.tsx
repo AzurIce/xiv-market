@@ -13,6 +13,7 @@ import {
 import { Button } from '../button'
 import { Card, CardContent } from '../card'
 import { EmptyState } from '../empty-state'
+import { formatGil as formatGilPrice } from '../format'
 import { Input } from '../input'
 import { ItemIcon } from '../item-icon'
 import { PageHeader } from '../page-header'
@@ -250,7 +251,7 @@ function isMateriaItem(name: string): boolean {
 
 function formatGil(value: number | undefined): string {
   if (!value || value <= 0) return '-'
-  return Math.round(value).toLocaleString('zh-CN')
+  return formatGilPrice(value)
 }
 
 function formatVelocity(value: number | undefined): string {
@@ -473,6 +474,7 @@ export default function MateriaPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = createSignal(typeof searchParams.q === 'string' ? searchParams.q : '')
   const [debouncedQuery, setDebouncedQuery] = createSignal(query())
+  const [isComposing, setIsComposing] = createSignal(false)
   const [grade, setGrade] = createSignal<MateriaGrade>(
     MATERIA_GRADES.includes(searchParams.grade as MateriaGrade) ? searchParams.grade as MateriaGrade : 'all'
   )
@@ -655,8 +657,9 @@ export default function MateriaPage() {
   onCleanup(() => window.clearTimeout(searchTimer))
 
   const setQueryAndParams = (value: string) => {
-    setQuery(value)
     window.clearTimeout(searchTimer)
+    if (isComposing()) return
+    setQuery(value)
     searchTimer = window.setTimeout(() => {
       setDebouncedQuery(value)
       updateParams({ q: value })
@@ -702,6 +705,14 @@ export default function MateriaPage() {
           <Input
             value={query()}
             onInput={(e) => setQueryAndParams(e.currentTarget.value)}
+            onCompositionStart={() => {
+              setIsComposing(true)
+              window.clearTimeout(searchTimer)
+            }}
+            onCompositionEnd={(e) => {
+              setIsComposing(false)
+              setQueryAndParams(e.currentTarget.value)
+            }}
             class="pl-10 pr-16"
             placeholder="搜索魔晶石名称或 ID..."
           />

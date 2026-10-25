@@ -422,14 +422,13 @@ export function ServerListingViolin(props: { directory: WorldDirectory; listings
                   if (!server) return []
                   const s = serverStats.get(server)
                   if (!s) return []
-                  const fmt = (n: number) => n.toLocaleString('zh-CN')
                   return [
                     `大区: ${s.dc}`,
                     `样本数: ${s.count}`,
-                    `最低: ${fmt(s.min)} Gil`,
-                    `中位数: ${fmt(s.median)} Gil`,
-                    `平均: ${fmt(Math.round(s.mean))} Gil`,
-                    `最高: ${fmt(s.max)} Gil`,
+                    `最低: ${formatGil(s.min)} Gil`,
+                    `中位数: ${formatGil(s.median)} Gil`,
+                    `平均: ${formatGil(s.mean)} Gil`,
+                    `最高: ${formatGil(s.max)} Gil`,
                   ]
                 },
               },
@@ -448,7 +447,7 @@ export function ServerListingViolin(props: { directory: WorldDirectory; listings
                   if (typeof v !== 'number') return v
                   if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`
                   if (v >= 1000) return `${(v / 1000).toFixed(0)}k`
-                  return v.toLocaleString('zh-CN')
+                  return formatGil(v)
                 },
               },
             },
@@ -690,11 +689,15 @@ export function ServerListingBarChart(props: { directory: WorldDirectory; listin
 
       {/* 统一 grid：表头和数据在同一个 grid 中，列宽全局一致 */}
       <div class="overflow-x-auto -mx-4 px-4 sm:-mx-6 sm:px-6">
-        <div class="grid grid-cols-[minmax(4.5rem,auto)_minmax(4.5rem,auto)_minmax(5.5rem,auto)_minmax(3.5rem,auto)_minmax(12rem,1fr)_minmax(3.5rem,auto)_minmax(5.5rem,auto)_minmax(5rem,auto)] gap-x-2 sm:gap-x-3 gap-y-1 text-xs px-0.5 min-w-[790px]">
+        <div class="grid grid-cols-[minmax(4.5rem,auto)_minmax(4.5rem,auto)_max-content_auto_max-content_minmax(3.5rem,auto)_minmax(12rem,1fr)_minmax(3.5rem,auto)_minmax(5.5rem,auto)_minmax(5rem,auto)] gap-x-2 sm:gap-x-3 gap-y-1 text-xs px-0.5 min-w-[790px]">
         {/* 表头 */}
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">最低价</span>
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">中位价</span>
-        <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">P25~P75</span>
+        <span class="col-span-3 grid grid-cols-subgrid gap-x-1 tabular-nums whitespace-nowrap text-muted-foreground">
+          <span class="text-right">P25</span>
+          <span class="text-center">~</span>
+          <span class="text-right">P75</span>
+        </span>
         <span class="text-right whitespace-nowrap text-muted-foreground">服务器</span>
         <Axis position="top" />
         <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground">挂单量</span>
@@ -719,8 +722,10 @@ export function ServerListingBarChart(props: { directory: WorldDirectory; listin
                 <span class="text-right tabular-nums whitespace-nowrap text-amber-500 group-hover:bg-accent/5 rounded px-0.5 py-0.5">
                   {formatGil(item.median)}
                 </span>
-                <span class="text-right tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded px-0.5 py-0.5">
-                  {formatGil(item.p25)}~{formatGil(item.p75)}
+                <span class="col-span-3 grid grid-cols-subgrid gap-x-1 tabular-nums whitespace-nowrap text-muted-foreground group-hover:bg-accent/5 rounded py-0.5">
+                  <span class="text-right">{formatGil(item.p25)}</span>
+                  <span class="text-center">~</span>
+                  <span class="text-right">{formatGil(item.p75)}</span>
                 </span>
                 <span class="text-muted-foreground truncate text-right whitespace-nowrap group-hover:bg-accent/5 rounded px-0.5 py-0.5" title={item.server}>
                   {item.server}
@@ -784,7 +789,7 @@ export function ServerListingBarChart(props: { directory: WorldDirectory; listin
         </For>
         <div></div>
         <div></div>
-        <div></div>
+        <div class="col-span-3"></div>
         <div></div>
         <Axis position="bottom" />
         <div></div>
@@ -908,7 +913,7 @@ export function ServerHistoryTrendChart(props: { history: any[]; animate?: boole
                 label: (item: any) => {
                   const v = item.parsed?.y
                   if (v == null) return ''
-                  return `${item.dataset.label}: ${v.toLocaleString('zh-CN')}${item.datasetIndex === 0 ? '' : ' Gil'}`
+                  return `${item.dataset.label}: ${item.datasetIndex === 0 ? v.toLocaleString('zh-CN') : formatGil(v)}${item.datasetIndex === 0 ? '' : ' Gil'}`
                 },
               },
             },
@@ -926,7 +931,7 @@ export function ServerHistoryTrendChart(props: { history: any[]; animate?: boole
                   if (typeof v !== 'number') return v
                   if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`
                   if (v >= 1000) return `${(v / 1000).toFixed(0)}k`
-                  return v.toLocaleString('zh-CN')
+                  return formatGil(v)
                 },
               },
             },
@@ -1063,7 +1068,7 @@ export function ServerHistoryScatterChart(props: { directory: WorldDirectory; hi
                 label: (item: any) => {
                   const raw = item.raw
                   const lines: string[] = []
-                  lines.push(`单价: ${raw.y.toLocaleString('zh-CN')} Gil`)
+                  lines.push(`单价: ${formatGil(raw.y)} Gil`)
                   lines.push(`数量: ${raw.qty}`)
                   if (raw.world) lines.push(`服务器: ${raw.world}`)
                   return lines
@@ -1093,7 +1098,7 @@ export function ServerHistoryScatterChart(props: { directory: WorldDirectory; hi
                 callback: (v: any) => {
                   if (typeof v !== 'number') return v
                   if (v >= 10000) return `${(v / 10000).toFixed(0)}万`
-                  return v.toLocaleString('zh-CN')
+                  return formatGil(v)
                 },
               },
             },

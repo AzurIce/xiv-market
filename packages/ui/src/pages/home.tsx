@@ -1,4 +1,4 @@
-import { createEffect, createSignal, createMemo, onCleanup, For, Show } from 'solid-js'
+import { batch, createEffect, createSignal, createMemo, on, onCleanup, For, Show } from 'solid-js'
 import { useNavigate, useSearchParams } from '@solidjs/router'
 import {
   fetchMarketableItems, fetchAggregatedData,
@@ -19,10 +19,7 @@ import { RefreshButton } from '../refresh-button'
 import { WorldBadge } from '../world-badge'
 import { ItemIcon } from '../item-icon'
 import { useErrorToast } from '../use-error-toast'
-
-function formatGil(v: number): string {
-  return v.toLocaleString('zh-CN')
-}
+import { formatGil } from '../format'
 
 function formatTime(ts: number): string {
   if (!ts) return '-'
@@ -195,16 +192,19 @@ export default function Home() {
   const [isComposing, setIsComposing] = createSignal(false)
   const [page, setPage] = createSignal(1)
   const PAGE_SIZE = 50
+  let searchTimer: number | undefined
+  onCleanup(() => window.clearTimeout(searchTimer))
 
-  createEffect(() => {
-    if (isComposing()) return
-    const q = typeof searchParams.q === 'string' ? searchParams.q : ''
-    if (q !== searchQuery()) {
+  // Only navigation updates the draft; typing must not restore the old URL query.
+  createEffect(on(() => searchParams.q, (value) => {
+    window.clearTimeout(searchTimer)
+    const q = typeof value === 'string' ? value : ''
+    batch(() => {
       setSearchQuery(q)
       setDebouncedQuery(q)
       setPage(1)
-    }
-  })
+    })
+  }))
 
   const marketable = createQueryResource(() => true, (_, signal) => fetchMarketableItems(signal))
   const marketableItems = () => marketable.res()?.data
@@ -262,21 +262,20 @@ export default function Home() {
     else agg.refetch()
   }
 
-  let searchTimer: number | undefined
-  onCleanup(() => window.clearTimeout(searchTimer))
-
   const setSearch = (value: string) => {
-    setSearchQuery(value)
     window.clearTimeout(searchTimer)
+    if (isComposing()) return
+    setSearchQuery(value)
     searchTimer = window.setTimeout(() => {
-      setDebouncedQuery(value)
-      setPage(1)
+      batch(() => {
+        setDebouncedQuery(value)
+        setPage(1)
+      })
       setSearchParams(value ? { q: value } : { q: undefined }, { replace: true })
     }, 300)
   }
 
   const handleInput = (e: InputEvent & { currentTarget: HTMLInputElement }) => {
-    if (isComposing()) return
     setSearch(e.currentTarget.value)
   }
 
@@ -324,7 +323,10 @@ export default function Home() {
               placeholder="搜索物品名称或 ID..."
               value={searchQuery()}
               onInput={handleInput}
-              onCompositionStart={() => setIsComposing(true)}
+              onCompositionStart={() => {
+                setIsComposing(true)
+                window.clearTimeout(searchTimer)
+              }}
               onCompositionEnd={handleCompositionEnd}
               class="pl-10 pr-16"
             />

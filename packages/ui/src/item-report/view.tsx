@@ -39,7 +39,21 @@ export function ItemReportView(props: ItemReportViewProps) {
   const [activeTab, setActiveTab] = createSignal('listings')
   const [listingChartTab, setListingChartTab] = createSignal('bar')
   const [historyChartTab, setHistoryChartTab] = createSignal('line')
-  const [copied, setCopied] = createSignal(false)
+  const [copyFeedback, setCopyFeedback] = createSignal('')
+  const [copyTooltipOpen, setCopyTooltipOpen] = createSignal(false)
+  const copied = () => copyFeedback() === '已复制'
+  let copyFeedbackTimer: ReturnType<typeof setTimeout> | undefined
+  let copyRequest = 0
+  createEffect(() => {
+    props.itemId
+    props.item.name
+    setCopyFeedback('')
+    setCopyTooltipOpen(false)
+    onCleanup(() => {
+      copyRequest++
+      clearTimeout(copyFeedbackTimer)
+    })
+  })
   const [isScrolled, setIsScrolled] = createSignal(false)
 
   let sentinelRef!: HTMLDivElement
@@ -191,12 +205,22 @@ export function ItemReportView(props: ItemReportViewProps) {
     </Show>
   )
 
-  const handleCopyName = () => {
-    const name = props.item.name
-    navigator.clipboard.writeText(name).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }).catch(() => {})
+  const handleCopyName = async () => {
+    const request = ++copyRequest
+    clearTimeout(copyFeedbackTimer)
+    setCopyFeedback('')
+    try {
+      await navigator.clipboard.writeText(props.item.name)
+      if (request !== copyRequest) return
+      setCopyFeedback('已复制')
+    } catch {
+      if (request !== copyRequest) return
+      setCopyFeedback('复制失败，请重试')
+    }
+    copyFeedbackTimer = setTimeout(() => {
+      setCopyFeedback('')
+      setCopyTooltipOpen(false)
+    }, 2000)
   }
 
   return (
@@ -239,24 +263,30 @@ export function ItemReportView(props: ItemReportViewProps) {
             {/* 操作按钮组 */}
             <div class="flex items-center gap-0.5 flex-shrink-0">
               {/* 复制按钮 */}
-              <Tooltip>
+              <Tooltip open={Boolean(copyFeedback()) || copyTooltipOpen()} onOpenChange={setCopyTooltipOpen}>
                 <TooltipTrigger
+                  type="button"
                   onClick={handleCopyName}
                   class={
                     'rounded-md hover:bg-accent/80 hover:text-accent-foreground transition-all duration-200 flex items-center justify-center text-muted-foreground ' +
                     (isScrolled() ? 'h-6 w-6' : 'h-7 w-7')
                   }
-                  aria-label={copied() ? '已复制' : '复制名称'}
+                  aria-label={copyFeedback() || '复制名称'}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'}>
-                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={isScrolled() ? 'h-3.5 w-3.5' : 'h-4 w-4'} aria-hidden="true">
+                    <Show when={copied()} fallback={<>
+                      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                    </>}>
+                      <path d="m5 12 4 4L19 6" />
+                    </Show>
                   </svg>
                 </TooltipTrigger>
                 <TooltipPortal>
-                  <TooltipContent>{copied() ? '已复制' : '复制名称'}</TooltipContent>
+                  <TooltipContent>{copyFeedback() || '复制名称'}</TooltipContent>
                 </TooltipPortal>
               </Tooltip>
+              <span role="status" class="sr-only">{copyFeedback()}</span>
 
               {/* 灰机wiki */}
               <Tooltip>

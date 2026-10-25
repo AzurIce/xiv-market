@@ -1,6 +1,6 @@
-export function formatGil(v: number): string {
-  return v.toLocaleString('zh-CN')
-}
+import { formatGil } from '../format'
+
+export { formatGil } from '../format'
 
 export function formatAxisGil(v: number): string {
   if (v >= 1000000) return `${Number((v / 1000000).toPrecision(3))}M`
