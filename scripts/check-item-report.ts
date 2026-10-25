@@ -12,6 +12,7 @@ const sourceDist = resolve(process.env.XIV_MARKET_DIST ?? 'app/dist')
 // Keep other builds in the shared workspace from changing assets mid-check.
 const dist = mkdtempSync(join(tmpdir(), 'xiv-market-check-dist-'))
 cpSync(sourceDist, dist, { recursive: true })
+const itemsDigest = readdirSync(join(dist, 'items')).find(name => /^[a-f0-9]{64}\.json$/.test(name))!.slice(0, -5)
 const baseline = process.env.REPORT_BASELINE_DIST && resolve(process.env.REPORT_BASELINE_DIST)
 const output = resolve(process.env.REPORT_CHECK_OUTPUT ?? '/tmp/xiv-market-report-check')
 mkdirSync(output, { recursive: true })
@@ -58,7 +59,7 @@ async function open(mode: 'web' | 'snapshot' | 'baseline', report = makeReport()
   await page.route('**/*', async (route: any) => {
     const url = new URL(route.request().url())
     const path = decodeURIComponent(url.pathname)
-    const isItemsData = /\/objects\/sha256\/[a-f0-9]{2}\/[a-f0-9]{62}$/.test(path)
+    const isItemsData = /\/objects\/sha256\/[a-f0-9]{2}\/[a-f0-9]{62}$/.test(path) || /\/items\/[a-f0-9]{64}\.json$/.test(path)
     if (url.hostname === 'universalis.app' || isItemsData) {
       dataRequests.push(url.href)
       if (mode === 'snapshot') return route.abort()
@@ -70,6 +71,15 @@ async function open(mode: 'web' | 'snapshot' | 'baseline', report = makeReport()
       if (path.startsWith('/api/v2/')) return faults.market
         ? route.fulfill({ status: 502, json: { error: 'fixture failure' } }) : route.fulfill({ json: report.market })
       throw new Error('unexpected data request: ' + url.href)
+    }
+    // Fixture bytes and their build-time digest must change together. Keep the
+    // production integrity check active rather than disabling Web Crypto.
+    if (url.origin === origin && path.endsWith('.js')) {
+      const root = mode === 'baseline' ? baseline! : dist
+      const asset = path.startsWith('/baseline/') ? path.slice('/baseline'.length) : path
+      const fixtureDigest = digest(Buffer.from(JSON.stringify({ [report.itemId]: report.item })))
+      const body = readFileSync(join(root, asset), 'utf-8').replaceAll(itemsDigest, fixtureDigest)
+      return route.fulfill({ contentType: 'text/javascript', body })
     }
     if (url.origin === origin) return route.continue()
     return route.abort()

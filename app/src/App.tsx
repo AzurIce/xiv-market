@@ -11,6 +11,7 @@ const HomePage = lazy(() => import('@xiv-market/ui/pages/home'))
 const MateriaPage = lazy(() => import('@xiv-market/ui/pages/materia'))
 const ItemDetailPage = lazy(() => import('@xiv-market/ui/pages/item-detail'))
 const SettingsPage = lazy(() => import('@xiv-market/ui/pages/settings'))
+const DebugPage = lazy(() => import('@xiv-market/ui/pages/debug'))
 
 function Layout(props: { children?: any }) {
   const location = useLocation()
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/materia" component={MateriaPage} />
         <Route path="/item/:id" component={ItemDetailPage} />
         <Route path="/settings" component={SettingsPage} />
+        <Route path="/debug" component={DebugPage} />
       </Route>
     </HashRouter>
   )

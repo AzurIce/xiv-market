@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { getItemsSource } from '../scripts/prepare-items'
+import { getItemsSource, prepareItems } from '../scripts/prepare-items'
 
 function fixture(run: (root: string, digest: string, bytes: string) => void, prefix = '') {
   const root = mkdtempSync(join(tmpdir(), 'xiv-market-items-'))
@@ -58,4 +58,26 @@ test('malformed refs fail instead of constructing a broken public URL', () => {
     writeFileSync(join(root, '.shadow/refs/data/items.json.ref'), 'version = 1\noid = "sha256:bad"\nsize = 20\n')
     assert.throws(() => getItemsSource(root), /Invalid items.json Shadow ref/)
   })
+})
+
+test('a fresh build downloads and verifies the GitHub Pages copy without credentials', async () => {
+  // The asynchronous preparation must finish before fixture cleanup.
+  let task: Promise<void>
+  const root = mkdtempSync(join(tmpdir(), 'xiv-market-prepare-'))
+  fixture((source, digest, bytes) => {
+    cpSync(source, root, { recursive: true })
+    task = (async () => {
+      let downloads = 0
+      await prepareItems(root, (async (url) => {
+        downloads++
+        assert.equal(url, getItemsSource(root).url)
+        return new Response(bytes)
+      }) as typeof fetch)
+      assert.equal(downloads, 1)
+      assert.equal(readFileSync(join(root, `app/public/items/${digest}.json`), 'utf-8'), bytes)
+      assert.equal(JSON.parse(readFileSync(join(root, 'app/.generated/items-source.json'), 'utf-8')).sha256, digest)
+      await assert.rejects(prepareItems(root, (async () => new Response('{}')) as typeof fetch), /does not match/)
+    })()
+  })
+  try { await task! } finally { rmSync(root, { recursive: true, force: true }) }
 })

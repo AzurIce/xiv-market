@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js'
 import { fetchJsonWithTimeout } from './async'
+import { firstAvailable, type DataSource } from './first-available'
 
 export interface ItemInfo {
   name: string
@@ -15,9 +16,11 @@ export interface ItemsVersionInfo {
 
 declare const __BUILD_COMMIT__: string
 declare const __BUILD_DATE__: string
-declare const __ITEMS_URL__: string
+declare const __ITEMS_SOURCES__: readonly DataSource[]
+declare const __ITEMS_SHA256__: string
+declare const __ITEMS_SIZE__: number
 
-type LegacyItemsPayload = Record<string, { name: string; icon: number; canBeHq?: boolean }>
+type ItemsPayload = Record<string, { name: string; icon: number; canBeHq?: boolean }>
 
 let itemsCache = new Map<number, ItemInfo>()
 let itemsLoaded = false
@@ -29,21 +32,37 @@ const [itemsRevision, setItemsRevision] = createSignal(0)
 // （重试时若已有 loadPromise 在途则复用；失败已将其清空，故会发起新请求）
 export type ItemsStatus = 'loading' | 'ready' | 'error'
 export const [itemsStatus, setItemsStatus] = createSignal<ItemsStatus>('loading')
+export const [loadedItemsSource, setLoadedItemsSource] = createSignal<DataSource | null>(null)
+
+export function getItemsSources(): readonly DataSource[] {
+  return __ITEMS_SOURCES__
+}
+
+export function getItemsDigest(): string {
+  return __ITEMS_SHA256__
+}
+
+export function getItemsSize(): number {
+  return __ITEMS_SIZE__
+}
 
 function trackItems() {
   itemsRevision()
 }
 
 async function fetchItems() {
-  return fetchJsonWithTimeout<LegacyItemsPayload>(__ITEMS_URL__, '物品数据请求失败')
+  return firstAvailable(getItemsSources(), async (source, signal) => {
+    const payload = await fetchJsonWithTimeout<ItemsPayload>(source.url, '物品数据请求失败', signal, { label: `物品数据 · ${source.label}`, sha256: getItemsDigest() })
+    return normalizeItems(payload)
+  })
 }
 
-function normalizeItems(payload: LegacyItemsPayload): Map<number, ItemInfo> {
+function normalizeItems(payload: ItemsPayload): Map<number, ItemInfo> {
   const map = new Map<number, ItemInfo>()
 
   for (const [id, info] of Object.entries(payload)) {
     const itemId = Number(id)
-    if (itemId && info?.name) {
+    if (Number.isSafeInteger(itemId) && itemId > 0 && typeof info?.name === 'string' && info.name.trim()) {
       map.set(itemId, { name: info.name, icon: Number(info.icon ?? 0), canBeHq: info.canBeHq === true })
     }
   }
@@ -60,7 +79,9 @@ export async function loadItems(): Promise<void> {
   setItemsStatus('loading')
   loadPromise = (async () => {
     try {
-      itemsCache = normalizeItems(await fetchItems())
+      const result = await fetchItems()
+      itemsCache = result.data
+      setLoadedItemsSource(result.source)
       itemCount = itemsCache.size
       itemsLoaded = true
       setItemsStatus('ready')

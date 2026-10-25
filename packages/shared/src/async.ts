@@ -1,6 +1,14 @@
 import { createResource, createSignal, onCleanup } from 'solid-js'
+import { beginRequest, finishRequest } from './request-profile'
 
 const REQUEST_TIMEOUT_MS = 20_000
+
+export interface JsonRequestOptions {
+  cache?: RequestCache
+  purpose?: 'app' | 'probe'
+  label?: string
+  sha256?: string
+}
 
 function abortWithReason(controller: AbortController, reason: unknown) {
   if (reason === undefined) controller.abort()
@@ -15,6 +23,7 @@ export async function fetchJsonWithTimeout<T>(
   url: string,
   errorMessage: string,
   signal?: AbortSignal,
+  options: JsonRequestOptions = {},
 ): Promise<T> {
   const controller = new AbortController()
   const abortFromSignal = () => abortWithReason(controller, signal?.reason)
@@ -31,16 +40,41 @@ export async function fetchJsonWithTimeout<T>(
     REQUEST_TIMEOUT_MS,
   )
 
+  const trace = beginRequest({ url, label: options.label ?? errorMessage.replace(/请求失败$/, ''), purpose: options.purpose ?? 'app', cache: options.cache ?? 'default' })
   try {
-    const res = await fetch(url, { signal: controller.signal })
-    if (!res.ok) throw new Error(`${errorMessage}（HTTP ${res.status}）`)
-    return await res.json() as T
+    const res = await fetch(url, { signal: controller.signal, cache: options.cache })
+    trace.httpStatus = res.status
+    trace.waitMs = performance.now() - trace.start
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {})
+      throw new Error(`${errorMessage}（HTTP ${res.status}）`)
+    }
+    const readStart = performance.now()
+    const bytes = await res.arrayBuffer()
+    trace.readMs = performance.now() - readStart
+    trace.bytes = bytes.byteLength
+    if (options.sha256) {
+      const verifyStart = performance.now()
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('')
+      trace.verifyMs = performance.now() - verifyStart
+      if (digest !== options.sha256) throw new Error('物品数据版本校验失败')
+    }
+    controller.signal.throwIfAborted()
+    const parseStart = performance.now()
+    const data = JSON.parse(new TextDecoder().decode(bytes)) as T
+    trace.parseMs = performance.now() - parseStart
+    trace.status = 'success'
+    return data
   } catch (e) {
+    trace.status = controller.signal.aborted && !timedOut ? 'aborted' : 'error'
+    trace.error = timedOut ? '请求超时' : e instanceof Error ? e.message : String(e)
     // 部分浏览器在 body 读取阶段被 abort 时只抛 AbortError，不保留 signal.reason。
     // 以本地标记恢复 TimeoutError，避免 createQueryResource 将真实超时当成主动取消静默掉。
     if (timedOut) throw new DOMException('请求超时', 'TimeoutError')
     throw e
   } finally {
+    trace.end = performance.now()
+    finishRequest(trace)
     clearTimeout(timer)
     signal?.removeEventListener('abort', abortFromSignal)
   }

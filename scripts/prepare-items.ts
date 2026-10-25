@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 /** Resolve the committed Shadow ref without downloading the item database. */
@@ -55,11 +55,34 @@ export function getItemsSource(root: string) {
   return { url: origin.href, sha256: digest, size: ref.size, commit: version.commit, date: version.date }
 }
 
-if (import.meta.main) {
-  const root = resolve(import.meta.dir, '..')
+export async function prepareItems(root: string, download: typeof fetch = fetch) {
   const source = getItemsSource(root)
+  const local = join(root, 'data/items.json')
+  let bytes: Buffer
+  if (existsSync(local)) bytes = readFileSync(local)
+  else {
+    const response = await download(source.url, { signal: AbortSignal.timeout(20_000) })
+    if (!response.ok) throw new Error(`Item data download failed: HTTP ${response.status}`)
+    bytes = Buffer.from(await response.arrayBuffer())
+  }
+  if (bytes.length !== source.size || createHash('sha256').update(bytes).digest('hex') !== source.sha256) {
+    throw new Error('Item data does not match the committed Shadow ref')
+  }
+  const publicItems = join(root, 'app/public/items')
+  mkdirSync(publicItems, { recursive: true })
+  const filename = `${source.sha256}.json`
+  // This directory contains generated, content-addressed copies for GitHub Pages.
+  for (const file of readdirSync(publicItems)) {
+    if (/^[a-f0-9]{64}\.json$/.test(file) && file !== filename) unlinkSync(join(publicItems, file))
+  }
+  writeFileSync(join(publicItems, filename), bytes)
   const output = join(root, 'app/.generated')
   mkdirSync(output, { recursive: true })
   writeFileSync(join(output, 'items-source.json'), JSON.stringify(source, null, 2) + '\n')
-  console.log('[Items] Using %s', source.url)
+  return source
+}
+
+if (import.meta.main) {
+  const source = await prepareItems(resolve(import.meta.dir, '..'))
+  console.log('[Items] TOS + GitHub Pages (SHA-256: %s)', source.sha256)
 }

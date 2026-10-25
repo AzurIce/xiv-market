@@ -15,9 +15,10 @@ function getGitCommit() {
 
 const itemsSource = JSON.parse(readFileSync(new URL('./.generated/items-source.json', import.meta.url), 'utf-8'))
 const gitCommit = getGitCommit()
+const base = (process.env.BASE_URL || '/').replace(/\/?$/, '/')
 
 export default defineConfig({
-  base: process.env.BASE_URL || '/',
+  base,
   plugins: [solid(), tailwindcss()],
   build: {
     rolldownOptions: {
@@ -30,7 +31,12 @@ export default defineConfig({
   define: {
     __BUILD_COMMIT__: JSON.stringify(itemsSource.commit),
     __BUILD_DATE__: JSON.stringify(itemsSource.date),
-    __ITEMS_URL__: JSON.stringify(itemsSource.url),
+    __ITEMS_SOURCES__: JSON.stringify([
+      { id: 'tos', label: 'TOS', url: itemsSource.url },
+      { id: 'github-pages', label: 'GitHub Pages', url: `${base}items/${itemsSource.sha256}.json` },
+    ]),
+    __ITEMS_SHA256__: JSON.stringify(itemsSource.sha256),
+    __ITEMS_SIZE__: JSON.stringify(itemsSource.size),
     __GIT_COMMIT__: JSON.stringify(gitCommit),
   },
   server: {

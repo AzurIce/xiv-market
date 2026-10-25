@@ -38,8 +38,8 @@ XIV Market 使用 [Universalis](https://universalis.app) 公开 API 直接查询
 
 `bun run update-items` 下载 CSV，生成 `data/items.json` 和 `data/items-version.json`。
 物品 JSON 通过 [Shadow](https://github.com/AzurIce/shadow) 发布到 TOS，Git 只记录内容哈希 ref 和版本信息。
-开发和生产构建均从 `.shadow/refs/data/items.json.ref` 生成公开 URL，网页直接从 TOS 加载名称与图标数据。
-JSON 不进入 GitHub Pages 构建产物；加载失败时首页显示提示并支持重试，仍可按 ID 搜索。
+开发和生产构建均从 `.shadow/refs/data/items.json.ref` 生成 TOS URL，并把相同内容复制到网站的 `items/<sha256>.json`，提供 GitHub Pages 备用源。文件本体继续由 Shadow 管理，不提交 Git。
+网页优先请求 TOS；2 秒内未完成时启动 GitHub Pages 备用请求。首个通过 SHA-256 校验和数据解析的来源生效，其他请求会取消；TOS 失败时立即启动备用源。两份数据均绑定当前构建的哈希，防止混用版本。双源都失败时首页显示提示并支持重试，仍可按 ID 搜索。
 
 ## 开发
 
@@ -58,9 +58,19 @@ shadow publish
 bun run build
 ```
 
-普通开发和构建只需已提交的 ref，不需要 TOS 密钥，也不需要先恢复 JSON。
+普通开发和构建不需要 TOS 密钥；`scripts/prepare-items.ts` 优先读取本地 `data/items.json`，缺失时从公开 TOS URL 下载并校验，再生成被 Git 忽略的 `app/public/items/<sha256>.json` 和构建元数据。
 需要本地物品数据文件时执行 `shadow restore`。本地更新过 JSON 后，必须先 `shadow publish` 再构建，避免引用旧版本。
 Nix 包仍提供 `$out/items.json`，使用 ref 中的 SHA-256 从 TOS 固定获取对应数据。
+
+## 网络诊断
+
+通过设置页的「打开网络诊断」或 `/#/debug`（子路径部署为 `/xiv-market/#/debug`）进入懒加载诊断页。
+
+- **Endpoint 测速**：手动测试两份物品数据、Universalis 数据中心 / 服务器 / 可交易物品列表，以及当前区域与指定物品 ID 的聚合行情、挂单、成交历史。支持正常缓存和绕过浏览器 HTTP 缓存，逐项执行，可停止；显示响应状态、等待、读取、大小和当前缓存模式下成功样本的中位数。
+- **请求 Profile**：记录最近 200 个应用 / 测速 JSON 请求的时间线，区分等待响应、读取响应、SHA-256 校验与 JSON 解析，可筛选、清空和查看单次详情。记录仅保存在当前文档内存中，不上传；命中应用 localStorage 缓存的操作不产生网络请求记录。
+- **浏览器资源**：查看最近 100 个脚本、样式、图片等资源的 Resource Timing，以及 FCP、文档就绪时间和主线程长任务。跨域源未提供 `Timing-Allow-Origin` 时，DNS、连接、TLS、TTFB、传输大小与缓存命中显示未知，不以 0 代替。
+
+打开页面不会自动运行测速。比较物品源会完整读取两份 JSON，流量大小在页面提示；测速不会替换应用已加载的数据。普通加载只有主源超过 2 秒或失败时才请求备用源。
 
 ## 网页与图片共用的物品报表
 

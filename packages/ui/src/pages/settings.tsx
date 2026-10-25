@@ -1,7 +1,7 @@
 import { For, Show } from 'solid-js'
 import { A } from '@solidjs/router'
-import { getItemsVersionInfo, itemsStatus, loadItems, type ItemsVersionInfo } from '@xiv-market/shared'
-import { Button } from '../button'
+import { getItemsVersionInfo, itemsStatus, loadItems, loadedItemsSource, type ItemsVersionInfo } from '@xiv-market/shared'
+import { Button, buttonVariants } from '../button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../card'
 import { Badge } from '../badge'
 import { EmptyState } from '../empty-state'
@@ -129,11 +129,15 @@ export default function Settings() {
               <Separator />
 
               <div class="flex items-center gap-2">
-                <span class="text-sm text-muted-foreground">部署方式</span>
-                <Badge variant="secondary">构建产物</Badge>
+                <span class="text-sm text-muted-foreground">当前数据源</span>
+                <Badge variant="secondary">{loadedItemsSource()?.label ?? '未知'}</Badge>
               </div>
             </Show>
           </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>网络诊断</CardTitle><CardDescription>比较 TOS 与 GitHub Pages 数据源，测试行情接口，查看请求耗时与浏览器资源 Profile。</CardDescription></CardHeader>
+          <CardContent><A href="/debug" class={buttonVariants({ variant: 'outline', size: 'sm' })}>打开网络诊断</A></CardContent>
         </Card>
       </div>
     </div>

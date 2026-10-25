@@ -45,6 +45,10 @@
     "./item-report/snapshot": {
       "types": "./src/item-report/snapshot.tsx",
       "default": "./src/item-report/snapshot.tsx"
+    },
+    "./pages/debug": {
+      "types": "./src/pages/debug.tsx",
+      "default": "./src/pages/debug.tsx"
     }
   },
   "dependencies": {

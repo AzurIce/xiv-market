@@ -3,7 +3,7 @@ import type { DataCenter, World, MarketData, HistoryData, AggregatedItemData } f
 import { fetchJsonWithTimeout } from './async'
 import { canItemBeHq } from './items'
 
-const BASE_URL = import.meta.env?.DEV ? '/api/universalis' : 'https://universalis.app'
+export const UNIVERSALIS_BASE_URL = import.meta.env?.DEV ? '/api/universalis' : 'https://universalis.app'
 
 const STATIC_CACHE_TTL = 24 * 60 * 60 * 1000
 const DC_CACHE_KEY = 'xiv_data_centers'
@@ -22,7 +22,7 @@ async function fetchWithLocalCache<T>(
       if (Date.now() - ts < STATIC_CACHE_TTL) return data as T
     } catch { /* ignore */ }
   }
-  const data = await fetchJsonWithTimeout<T>(`${BASE_URL}${path}`, errorMessage, signal)
+  const data = await fetchJsonWithTimeout<T>(`${UNIVERSALIS_BASE_URL}${path}`, errorMessage, signal)
   try {
     localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() }))
   } catch { /* quota exceeded */ }
@@ -49,7 +49,7 @@ export async function fetchMarketableItems(signal?: AbortSignal): Promise<number
     } catch { /* ignore */ }
   }
   const data = await fetchJsonWithTimeout<number[]>(
-    `${BASE_URL}/api/v2/marketable`,
+    `${UNIVERSALIS_BASE_URL}/api/v2/marketable`,
     '可交易物品列表请求失败',
     signal,
   )
@@ -66,7 +66,7 @@ export async function fetchAggregatedData(
   signal?: AbortSignal,
 ): Promise<AggregatedItemData[]> {
   const json: any = await fetchJsonWithTimeout(
-    `${BASE_URL}/api/v2/aggregated/${encodeURIComponent(worldDcRegion)}/${itemIds}`,
+    `${UNIVERSALIS_BASE_URL}/api/v2/aggregated/${encodeURIComponent(worldDcRegion)}/${itemIds}`,
     '聚合行情请求失败',
     signal,
   )
@@ -106,7 +106,7 @@ export async function fetchMarketData(
   signal?: AbortSignal,
 ): Promise<Record<number, MarketData>> {
   const raw: any = await fetchJsonWithTimeout(
-    `${BASE_URL}/api/v2/${encodeURIComponent(worldDcRegion)}/${itemIds}`,
+    `${UNIVERSALIS_BASE_URL}/api/v2/${encodeURIComponent(worldDcRegion)}/${itemIds}`,
     '市场数据请求失败',
     signal,
   )
@@ -135,7 +135,7 @@ export async function fetchHistoryData(
 ): Promise<HistoryData> {
   const entriesWithin = 30 * 24 * 60 * 60 // 30 days
   const raw = await fetchJsonWithTimeout(
-    `${BASE_URL}/api/v2/history/${encodeURIComponent(worldDcRegion)}/${itemIds}?entriesWithin=${entriesWithin}`,
+    `${UNIVERSALIS_BASE_URL}/api/v2/history/${encodeURIComponent(worldDcRegion)}/${itemIds}?entriesWithin=${entriesWithin}`,
     '历史成交请求失败',
     signal,
   )

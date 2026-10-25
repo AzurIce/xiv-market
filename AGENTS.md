@@ -51,7 +51,8 @@ packages/
     │                    # 如 button、select、empty-state、refresh-button、world-badge、scope-select
     ├── src/layout/      # 布局组件（Navbar）
     ├── src/item-report/ # 网页与截图唯一的报表 View、图表及截图适配
-    ├── src/pages/       # 共享页面（Home、Materia、ItemDetail、Settings）
+    ├── src/debug/       # 浏览器性能计时适配
+    ├── src/pages/       # 共享页面（Home、Materia、ItemDetail、Settings、Debug）
     └── src/index.ts     # 统一导出
 
 app/                     # xiv-market 应用（GitHub Pages 部署）
@@ -59,7 +60,7 @@ app/                     # xiv-market 应用（GitHub Pages 部署）
 ├── src/render.tsx       # 注入报表 JSON 的轻量截图入口，无数据请求
 ├── render.html          # 与 index.html 一起构建的截图页面
 ├── vite.config.ts       # Vite 配置（base 通过环境变量控制）
-└── public/              # 静态图片等资源（物品 JSON 由 TOS 提供）
+└── public/              # 静态图片及自动生成的 items/<sha256>.json 备用数据
 
 scripts/                 # 构建脚本
 └── update-items.ts
@@ -126,12 +127,15 @@ app/
 - 物品中文名/图标/是否可 HQ（`canBeHq`，仅 true 时输出）映射来自 [thewakingsands/ffxiv-datamining-cn](https://github.com/thewakingsands/ffxiv-datamining-cn) 的 `Item.csv`
 - 图标 URL 格式：`https://www.garlandtools.org/files/icons/item/t/{icon_id}.png`
 - `bun run update-items` 生成 `data/items.json` 和 `data/items-version.json`，再用 `shadow publish` 发布到 TOS；提交版本文件和 `.shadow/refs/data/items.json.ref`，不提交 JSON 文件本体
-- `scripts/prepare-items.ts` 在开发和构建前读取 Shadow 配置与 ref，生成被忽略的 `app/.generated/items-source.json`；Vite 将内容寻址的 TOS URL 注入 `__ITEMS_URL__`，网页直接请求此地址，不从 GitHub Pages 获取物品数据
-- 普通构建不需要凭证或恢复数据；若本地存在尚未发布的 JSON 改动，构建会失败，需先 `shadow publish`
+- `scripts/prepare-items.ts` 在开发和构建前读取 Shadow 配置与 ref，校验本地 JSON（缺失时从公开 TOS URL 下载），生成被忽略的 `app/.generated/items-source.json` 和 `app/public/items/<sha256>.json`
+- Vite 注入 `__ITEMS_SOURCES__`、`__ITEMS_SHA256__` 和 `__ITEMS_SIZE__`；TOS 优先，2 秒后启用 GitHub Pages 备用源，取首个校验及解析成功的结果并取消其他请求。失败立即启动备用源，两个源均失败才设置 error；不得绕过 SHA-256 校验接受混杂版本
+- 普通构建不需要凭证；若本地存在尚未发布的 JSON 改动，构建会失败，需先 `shadow publish`
 - 部署先通过 Shadow 恢复、发布和校验，再用 `scripts/check-items-access.ts` 验证公开读取、CORS 和哈希；`.env` 只存本地凭证，CI 使用同名 secrets，不得把密钥注入前端
 - commit hash 在构建时注入 JS bundle（`vite.config.ts` → `define`）
 - 物品名/图标查询：`@xiv-market/shared` — `getItemName(id)` / `getItemIconUrl(id)` / `getIconUrl(iconId)`
 - 不可 HQ 判断：`canItemBeHq(id)`；Universalis 存在把不可 HQ 物品（如水晶）上报出 HQ 统计的脏数据，`fetchAggregatedData` 会据此丢弃 hq 块
+
+`/#/debug` 是共享 UI 包的懒加载诊断页，设置页提供入口。测速必须手动触发，可取消，且不能改写行情或物品缓存。`fetchJsonWithTimeout` 统一记录最近 200 次请求的等待、读取、校验和解析时间；只存元数据，不存响应内容。浏览器 Resource Timing 的跨域限制必须显示为未知，不能把被屏蔽的 0 当作零延迟或缓存命中。诊断页卸载时停止测速、计时器与 PerformanceObserver。
 
 ## 组件开发规范
 

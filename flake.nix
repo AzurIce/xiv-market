@@ -114,6 +114,8 @@
             done
             chmod -R u+w .
             patchShebangs node_modules
+            mkdir -p data
+            cp ${itemsData} data/items.json
             bun run build
             runHook postBuild
           '';
